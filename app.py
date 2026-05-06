@@ -388,10 +388,11 @@ def parse(data, symbol):
     ce_sqrt = math.sqrt(ce_sum) if ce_sum > 0 else 0.0
     pe_sqrt = math.sqrt(pe_sum) if pe_sum > 0 else 0.0
 
-    # PCR: ATM-5 to ATM+5 (16 strikes)
-    pcr_strikes  = [atm + (i * step) for i in range(-8, 9)]
-    total_ce_oi  = sum(ce_oi.get(float(s), 0.0) for s in pcr_strikes)
-    total_pe_oi  = sum(pe_oi.get(float(s), 0.0) for s in pcr_strikes)
+    # PCR: CE = ATM to ATM+6, PE = ATM to ATM-6
+    ce_pcr_strikes = [atm + (i * step) for i in range(0, 7)]   # ATM, +1 … +6
+    pe_pcr_strikes = [atm - (i * step) for i in range(0, 7)]   # ATM, -1 … -6
+    total_ce_oi  = sum(ce_oi.get(float(s), 0.0) for s in ce_pcr_strikes)
+    total_pe_oi  = sum(pe_oi.get(float(s), 0.0) for s in pe_pcr_strikes)
     pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
 
     return dict(spot=spot, atm=atm,
@@ -417,7 +418,7 @@ def pcr_html(pcr):
             f"<span class='pcr-label'>PCR</span>"
             f"<span class='pcr-val {cls}'>{pcr:.2f}</span>"
             f"<span class='pcr-tag {tag}'>{text}</span>"
-            f"<span class='pcr-label' style='margin-left:4px;font-size:9px;'>ATM±5</span>"
+            f"<span class='pcr-label' style='margin-left:4px;font-size:9px;'>CE:ATM→+6 | PE:ATM→-6</span>"
             f"</div>")
 
 def render_table(r, symbol, expiry):
