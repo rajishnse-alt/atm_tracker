@@ -389,8 +389,8 @@ def parse(data, symbol):
     pe_sqrt = math.sqrt(pe_sum) if pe_sum > 0 else 0.0
 
     # PCR: CE = ATM to ATM+6, PE = ATM to ATM-6
-    ce_pcr_strikes = [atm + (i * step) for i in range(-4, 7)]   # ATM, +1 … +6
-    pe_pcr_strikes = [atm - (i * step) for i in range(-4, 7)]   # ATM, -1 … -6
+    ce_pcr_strikes = [atm + (i * step) for i in range(-8, 9)]   # ATM, +1 … +6
+    pe_pcr_strikes = [atm - (i * step) for i in range(-8, 9)]   # ATM, -1 … -6
     total_ce_oi  = sum(ce_oi.get(float(s), 0.0) for s in ce_pcr_strikes)
     total_pe_oi  = sum(pe_oi.get(float(s), 0.0) for s in pe_pcr_strikes)
     pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
