@@ -101,7 +101,6 @@ def exchange_code(api_key, api_secret, redirect_uri, code):
 
 # ─────────────────────────────────────────────
 # STEP 1: GET EXPIRY DATES FROM UPSTOX
-# Much more reliable than calculating manually
 # ─────────────────────────────────────────────
 def fetch_expiry_dates(token, symbol):
     try:
@@ -116,10 +115,7 @@ def fetch_expiry_dates(token, symbol):
             return None, "token_expired"
         if d.get("status") == "success" and d.get("data"):
             raw = d["data"]
-            # Upstox returns either list of strings OR list of dicts
             if raw and isinstance(raw[0], dict):
-                # Extract expiry string from each dict
-                # Try common key names
                 dates = []
                 for item in raw:
                     exp = (item.get("expiry")
@@ -138,12 +134,11 @@ def fetch_expiry_dates(token, symbol):
         return None, str(e)
 
 # ─────────────────────────────────────────────
-# STEP 2: GET OPTION CHAIN FOR NEAREST EXPIRY
-# Tries v2 then v3 endpoint automatically
+# STEP 2: GET OPTION CHAIN FOR SELECTED EXPIRY
 # ─────────────────────────────────────────────
 def fetch_chain(token, symbol, expiry_date):
     cache_key = f"oc_{symbol}_{expiry_date}"
-    time_key  = f"oc_time_{symbol}"
+    time_key  = f"oc_time_{symbol}_{expiry_date}"
     now       = time.time()
 
     if (cache_key in st.session_state
@@ -183,7 +178,6 @@ def fetch_chain(token, symbol, expiry_date):
         except Exception as e:
             last_err = str(e)
 
-    # Store raw response for debug
     st.session_state[f"raw_{symbol}"] = last_raw
     return None, last_err, UPSTOX_OC_URLS[-1]
 
@@ -206,7 +200,7 @@ def parse(data, symbol):
             if sp:
                 spot = float(sp)
 
-        call   = (row.get("call_options") or {})
+        call    = (row.get("call_options") or {})
         call_md = call.get("market_data") or {}
         ce_map[strike] = float(call_md.get("ltp") or 0)
 
@@ -390,9 +384,25 @@ for col, sym in [(col1, "NIFTY"), (col2, "BANKNIFTY")]:
                 unsafe_allow_html=True)
             continue
 
-        nearest = expiry_dates[0]   # already sorted, first = nearest
+        # ── Expiry dropdown ────────────────────────────────────
+        expiry_key = f"selected_expiry_{sym}"
+        if expiry_key not in st.session_state:
+            st.session_state[expiry_key] = expiry_dates[0]
 
-        # Step 2: get option chain for nearest expiry
+        # Guard: if stored expiry no longer exists in list, reset to nearest
+        if st.session_state[expiry_key] not in expiry_dates:
+            st.session_state[expiry_key] = expiry_dates[0]
+
+        selected = st.selectbox(
+            f"{sym} — Select Expiry",
+            options=expiry_dates,
+            index=expiry_dates.index(st.session_state[expiry_key]),
+            key=f"sb_{sym}",
+        )
+        st.session_state[expiry_key] = selected
+        nearest = selected
+
+        # Step 2: get option chain for selected expiry
         with st.spinner(f"Loading {sym} option chain ({nearest})..."):
             data, chain_err, used_url = fetch_chain(access_token, sym, nearest)
 
