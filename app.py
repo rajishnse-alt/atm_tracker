@@ -13,24 +13,29 @@ st.markdown("""
 <style>
     .block-container{padding-top:1rem;padding-bottom:1rem;}
     .stApp{background:#0e1117;}
-    table{width:100%;border-collapse:collapse;font-size:14px;}
-    th{background:#1a237e;color:white;padding:8px 12px;text-align:left;font-weight:500;}
-    td{padding:7px 12px;border-bottom:1px solid #2a2a3a;}
+    .tbl-wrap{max-width:400px;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    th{background:#1a237e;color:white;padding:5px 9px;text-align:left;font-weight:500;font-size:11px;}
+    td{padding:5px 9px;border-bottom:1px solid #2a2a3a;font-size:12px;}
     .ce-lbl{background:#0d47a1;color:white;}
     .pe-lbl{background:#4a148c;color:white;}
     .sum-row{background:#004d40;color:white;font-weight:500;}
     .sqrt-row{background:#bf360c;color:white;font-weight:500;}
     .bias-bear{background:#ffcccc;color:#cc0000;font-weight:600;}
     .bias-bull{background:#ccffcc;color:#006600;font-weight:600;}
+    .pcr-bear{background:#3a1a1a;color:#ff6b6b;font-weight:600;}
+    .pcr-bull{background:#1a3a1a;color:#69db7c;font-weight:600;}
+    .pcr-neut{background:#2a2a1a;color:#ffd54f;font-weight:600;}
     .strike-ce{background:white;color:#1565c0;font-weight:500;}
     .strike-pe{background:white;color:#6a1b9a;font-weight:500;}
     .price-ce{background:white;color:#0d47a1;}
     .price-pe{background:white;color:#4a148c;}
-    .spot-val{font-size:22px;font-weight:600;color:white;}
-    .spot-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;}
-    .atm-val{font-size:14px;color:#ffd54f;margin-top:2px;}
-    .card{background:#1a1a2e;border-radius:10px;padding:.85rem 1.25rem;
-          border:1px solid #2a2a4a;margin-bottom:.6rem;}
+    .spot-val{font-size:20px;font-weight:600;color:white;}
+    .inst-name{font-size:15px;font-weight:700;color:white;letter-spacing:.5px;}
+    .spot-lbl{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;}
+    .atm-val{font-size:13px;color:#ffd54f;margin-top:2px;}
+    .card{background:#1a1a2e;border-radius:10px;padding:.75rem 1.1rem;
+          border:1px solid #2a2a4a;margin-bottom:.5rem;max-width:400px;}
     .err-box{background:#2a1a1a;border:1px solid #7f1d1d;border-radius:8px;
              padding:.75rem 1rem;color:#fc8181;font-size:13px;margin-bottom:.6rem;}
     .login-box{background:#1a2030;border:1px solid #2a4080;border-radius:12px;
@@ -231,10 +236,12 @@ def snap(price, step):
 
 def parse(data, symbol):
     # Use fixed step for indices; infer from live data for stocks
-    step = STRIKE_STEP_FIXED.get(symbol) or infer_strike_step(data)
-    ce_map = {}
-    pe_map = {}
-    spot   = None
+    step    = STRIKE_STEP_FIXED.get(symbol) or infer_strike_step(data)
+    ce_map  = {}   # strike -> ltp
+    pe_map  = {}
+    ce_oi   = {}   # strike -> open interest
+    pe_oi   = {}
+    spot    = None
 
     for row in data:
         strike = float(row.get("strike_price", 0))
@@ -246,10 +253,12 @@ def parse(data, symbol):
         call    = (row.get("call_options") or {})
         call_md = call.get("market_data") or {}
         ce_map[strike] = float(call_md.get("ltp") or 0)
+        ce_oi[strike]  = float(call_md.get("oi")  or 0)
 
         put    = (row.get("put_options") or {})
         put_md = put.get("market_data") or {}
         pe_map[strike] = float(put_md.get("ltp") or 0)
+        pe_oi[strike]  = float(put_md.get("oi")  or 0)
 
     if spot is None:
         common = set(ce_map) & set(pe_map)
@@ -277,11 +286,20 @@ def parse(data, symbol):
     ce_sqrt = math.sqrt(ce_sum) if ce_sum > 0 else 0.0
     pe_sqrt = math.sqrt(pe_sum) if pe_sum > 0 else 0.0
 
+    # ── PCR: cumulative OI across ATM-5 to ATM+5 strikes ──────
+    pcr_strikes = [atm + (i * step) for i in range(-5, 6)]
+    total_ce_oi = sum(ce_oi.get(float(s), 0.0) for s in pcr_strikes)
+    total_pe_oi = sum(pe_oi.get(float(s), 0.0) for s in pcr_strikes)
+    pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
+
     return dict(spot=spot, atm=atm,
                 ce_rows=ce_rows, pe_rows=pe_rows,
                 ce_sum=ce_sum,   pe_sum=pe_sum,
                 ce_sqrt=ce_sqrt, pe_sqrt=pe_sqrt,
-                bearish=ce_sqrt > pe_sqrt)
+                bearish=ce_sqrt > pe_sqrt,
+                pcr=pcr,
+                total_pe_oi=total_pe_oi,
+                total_ce_oi=total_ce_oi)
 
 # ─────────────────────────────────────────────
 # RENDER TABLE
