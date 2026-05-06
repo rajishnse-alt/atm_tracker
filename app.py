@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import math
 import time
-from datetime import date, timedelta, datetime
+from datetime import datetime
 import pytz
 
 # ─────────────────────────────────────────────
@@ -48,19 +48,22 @@ st.markdown("""
 IST         = pytz.timezone("Asia/Kolkata")
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
 
-# Upstox instrument keys for indices
 INSTRUMENT_KEY = {
     "NIFTY":     "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
 }
 
-# Upstox API endpoints
-UPSTOX_AUTH_URL  = "https://api.upstox.com/v2/login/authorization/dialog"
-UPSTOX_TOKEN_URL = "https://api.upstox.com/v2/login/authorization/token"
-UPSTOX_OC_URL    = "https://api.upstox.com/v2/option/chain"
+# Try both API versions
+UPSTOX_OC_URLS = [
+    "https://api.upstox.com/v2/option/chain",
+    "https://api.upstox.com/v3/option/chain",
+]
+UPSTOX_CONTRACT_URL = "https://api.upstox.com/v2/option/contract"
+UPSTOX_AUTH_URL     = "https://api.upstox.com/v2/login/authorization/dialog"
+UPSTOX_TOKEN_URL    = "https://api.upstox.com/v2/login/authorization/token"
 
 # ─────────────────────────────────────────────
-# SECRETS CHECK
+# HELPERS
 # ─────────────────────────────────────────────
 def secrets_ok():
     try:
@@ -71,127 +74,131 @@ def secrets_ok():
     except Exception:
         return False
 
-# ─────────────────────────────────────────────
-# NEAREST EXPIRY
-# Nifty weekly = Thursday | BankNifty weekly = Wednesday
-# ─────────────────────────────────────────────
-def nearest_expiry(symbol: str) -> str:
-    today      = date.today()
-    target_dow = 3 if symbol == "NIFTY" else 2   # Thu=3, Wed=2
-    days       = target_dow - today.weekday()
-    if days < 0:
-        days += 7
-    return (today + timedelta(days=days)).strftime("%Y-%m-%d")  # "2025-05-08"
+def upstox_headers(token):
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-# ─────────────────────────────────────────────
-# OAUTH HELPERS
-# ─────────────────────────────────────────────
-def build_auth_url(api_key: str, redirect_uri: str) -> str:
-    return (
-        f"{UPSTOX_AUTH_URL}"
-        f"?response_type=code"
-        f"&client_id={api_key}"
-        f"&redirect_uri={redirect_uri}"
-    )
+def build_auth_url(api_key, redirect_uri):
+    return (f"{UPSTOX_AUTH_URL}"
+            f"?response_type=code&client_id={api_key}&redirect_uri={redirect_uri}")
 
 def exchange_code(api_key, api_secret, redirect_uri, code):
     try:
         r = requests.post(
             UPSTOX_TOKEN_URL,
-            data={
-                "code":          code,
-                "client_id":     api_key,
-                "client_secret": api_secret,
-                "redirect_uri":  redirect_uri,
-                "grant_type":    "authorization_code",
-            },
+            data={"code": code, "client_id": api_key,
+                  "client_secret": api_secret,
+                  "redirect_uri": redirect_uri,
+                  "grant_type": "authorization_code"},
             headers={"Accept": "application/json"},
             timeout=15,
         )
         d = r.json()
         if "access_token" in d:
             return d["access_token"], None
-        return None, d.get("message") or d.get("error_description") or str(d)
+        return None, str(d)
     except Exception as e:
         return None, str(e)
 
 # ─────────────────────────────────────────────
-# FETCH OPTION CHAIN  (session-state cache 3 min)
+# STEP 1: GET EXPIRY DATES FROM UPSTOX
+# Much more reliable than calculating manually
 # ─────────────────────────────────────────────
-def fetch_chain(access_token: str, symbol: str, expiry: str):
-    cache_key  = f"oc_{symbol}"
-    time_key   = f"oc_time_{symbol}"
-    now        = time.time()
-
-    # Return cached data if fresher than 3 minutes
-    if (cache_key in st.session_state and
-            time_key in st.session_state and
-            now - st.session_state[time_key] < 180):
-        return st.session_state[cache_key], None
-
+def fetch_expiry_dates(token, symbol):
     try:
         r = requests.get(
-            UPSTOX_OC_URL,
-            params={
-                "instrument_key": INSTRUMENT_KEY[symbol],
-                "expiry_date":    expiry,
-            },
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept":        "application/json",
-            },
+            UPSTOX_CONTRACT_URL,
+            params={"instrument_key": INSTRUMENT_KEY[symbol]},
+            headers=upstox_headers(token),
             timeout=15,
         )
         d = r.json()
-
         if r.status_code == 401:
-            # Token expired — force re-login
-            if "access_token" in st.session_state:
-                del st.session_state["access_token"]
             return None, "token_expired"
-
         if d.get("status") == "success" and d.get("data"):
-            st.session_state[cache_key] = d["data"]
-            st.session_state[time_key]  = now
-            return d["data"], None
-
-        return None, d.get("message") or d.get("errors") or "No data"
-
+            dates = sorted(d["data"])   # ["2026-05-07", "2026-05-14", ...]
+            return dates, None
+        return None, f"Expiry fetch failed: {d}"
     except Exception as e:
         return None, str(e)
+
+# ─────────────────────────────────────────────
+# STEP 2: GET OPTION CHAIN FOR NEAREST EXPIRY
+# Tries v2 then v3 endpoint automatically
+# ─────────────────────────────────────────────
+def fetch_chain(token, symbol, expiry_date):
+    cache_key = f"oc_{symbol}_{expiry_date}"
+    time_key  = f"oc_time_{symbol}"
+    now       = time.time()
+
+    if (cache_key in st.session_state
+            and time_key in st.session_state
+            and now - st.session_state[time_key] < 180):
+        return st.session_state[cache_key], None, st.session_state.get(f"oc_url_{symbol}", "cached")
+
+    last_err  = "No response"
+    last_raw  = {}
+
+    for url in UPSTOX_OC_URLS:
+        try:
+            r = requests.get(
+                url,
+                params={"instrument_key": INSTRUMENT_KEY[symbol],
+                        "expiry_date":    expiry_date},
+                headers=upstox_headers(token),
+                timeout=15,
+            )
+            last_raw = r.json()
+
+            if r.status_code == 401:
+                return None, "token_expired", url
+
+            if last_raw.get("status") == "success":
+                data = last_raw.get("data") or []
+                if data:
+                    st.session_state[cache_key]          = data
+                    st.session_state[time_key]           = now
+                    st.session_state[f"oc_url_{symbol}"] = url
+                    return data, None, url
+                else:
+                    last_err = f"Empty data array from {url}"
+            else:
+                last_err = str(last_raw)
+
+        except Exception as e:
+            last_err = str(e)
+
+    # Store raw response for debug
+    st.session_state[f"raw_{symbol}"] = last_raw
+    return None, last_err, UPSTOX_OC_URLS[-1]
 
 # ─────────────────────────────────────────────
 # PARSE & COMPUTE
 # ─────────────────────────────────────────────
-def snap(price: float, step: int) -> int:
+def snap(price, step):
     return int(round(price / step) * step)
 
-def parse(data: list, symbol: str) -> dict:
-    step    = STRIKE_STEP[symbol]
-    ce_map  = {}
-    pe_map  = {}
-    spot    = None
+def parse(data, symbol):
+    step   = STRIKE_STEP[symbol]
+    ce_map = {}
+    pe_map = {}
+    spot   = None
 
     for row in data:
         strike = float(row.get("strike_price", 0))
-
         if spot is None:
             sp = row.get("underlying_spot_price")
             if sp:
                 spot = float(sp)
 
-        # Call options
-        call = row.get("call_options") or {}
+        call   = (row.get("call_options") or {})
         call_md = call.get("market_data") or {}
         ce_map[strike] = float(call_md.get("ltp") or 0)
 
-        # Put options
-        put = row.get("put_options") or {}
+        put    = (row.get("put_options") or {})
         put_md = put.get("market_data") or {}
         pe_map[strike] = float(put_md.get("ltp") or 0)
 
     if spot is None:
-        # Fallback: strike where |CE - PE| is minimum
         common = set(ce_map) & set(pe_map)
         if common:
             spot = float(min(common, key=lambda s: abs(ce_map[s] - pe_map[s])))
@@ -226,13 +233,12 @@ def parse(data: list, symbol: str) -> dict:
 # ─────────────────────────────────────────────
 # RENDER TABLE
 # ─────────────────────────────────────────────
-def render_table(r: dict, symbol: str, expiry: str):
+def render_table(r, symbol, expiry):
     bear  = r["bearish"]
     bcls  = "bias-bear" if bear else "bias-bull"
     btxt  = (f"▼ &nbsp;BEARISH &nbsp;(√CE {r['ce_sqrt']:.2f} > √PE {r['pe_sqrt']:.2f})"
              if bear else
              f"▲ &nbsp;BULLISH &nbsp;(√PE {r['pe_sqrt']:.2f} > √CE {r['ce_sqrt']:.2f})")
-
     ce_html = "".join(
         f"<tr><td class='ce-lbl'>{x['label']}</td>"
         f"<td class='strike-ce'>{x['strike']}</td>"
@@ -243,7 +249,6 @@ def render_table(r: dict, symbol: str, expiry: str):
         f"<td class='strike-pe'>{x['strike']}</td>"
         f"<td class='price-pe'>{x['price']:.2f}</td></tr>"
         for x in r["pe_rows"])
-
     st.markdown(f"""
     <table>
       <thead><tr>
@@ -270,34 +275,19 @@ def show_setup_guide():
     st.markdown("""
     <div class='setup-box'>
     <b style='font-size:15px;color:white;'>⚙️ One-time Upstox setup (5 minutes)</b><br><br>
-
-    <b>Step 1 — Create Upstox API app</b><br>
-    &nbsp;&nbsp;• Go to <b>developer.upstox.com</b> → Login → My Apps → Create New App<br>
-    &nbsp;&nbsp;• App Name: ATM Tracker<br>
-    &nbsp;&nbsp;• Redirect URL: <b>your Streamlit app URL</b>
-      (e.g. https://yourname-atm-tracker-xxxx.streamlit.app)<br>
-    &nbsp;&nbsp;• Copy the <b>API Key</b> and <b>Secret Key</b><br><br>
-
-    <b>Step 2 — Add secrets to Streamlit Cloud</b><br>
-    &nbsp;&nbsp;• Streamlit Cloud → your app → <b>Settings → Secrets</b> → paste:<br><br>
-
+    <b>Step 1</b> — Go to <b>developer.upstox.com</b> → Login → My Apps → Create New App<br>
+    &nbsp;&nbsp;• Redirect URL = your Streamlit app URL<br>
+    &nbsp;&nbsp;• Copy <b>API Key</b> and <b>Secret Key</b><br><br>
+    <b>Step 2</b> — Streamlit Cloud → your app → <b>Settings → Secrets</b>:<br><br>
     <code style='display:block;background:#1a1a2e;padding:12px;border-radius:6px;
                  color:#90caf9;font-size:13px;line-height:2;'>
     [upstox]<br>
-    api_key      = "your_upstox_api_key"<br>
-    api_secret   = "your_upstox_secret_key"<br>
+    api_key      = "your_api_key"<br>
+    api_secret   = "your_secret_key"<br>
     redirect_uri = "https://yourname-atm-tracker-xxxx.streamlit.app"
     </code><br>
-
-    <b>Step 3 — Daily login (once per trading day, 15 seconds)</b><br>
-    &nbsp;&nbsp;• Click the <b>Login with Upstox</b> button that appears<br>
-    &nbsp;&nbsp;• Login on Upstox → redirects back automatically<br>
-    &nbsp;&nbsp;• Done — app runs all day without any more logins<br><br>
-
-    <small style='color:#666;'>Upstox tokens last until end of trading day.
-    You only need to click Login once each morning.</small>
-    </div>
-    """, unsafe_allow_html=True)
+    <b>Step 3</b> — Click <b>Login with Upstox</b> once each morning. Done!
+    </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # MAIN
@@ -314,11 +304,9 @@ st.markdown(
     f" &nbsp;·&nbsp; Auto-refresh every 3 min</p>",
     unsafe_allow_html=True)
 
-# ── Setup guide if secrets missing ────────────────────────────
 if not secrets_ok():
-    st.markdown(
-        "<p style='color:#fc8181;'>⚠️ Upstox credentials not found in Streamlit secrets.</p>",
-        unsafe_allow_html=True)
+    st.markdown("<p style='color:#fc8181;'>⚠️ Upstox credentials not found in Streamlit secrets.</p>",
+                unsafe_allow_html=True)
     show_setup_guide()
     st.stop()
 
@@ -326,83 +314,99 @@ api_key      = st.secrets["upstox"]["api_key"]
 api_secret   = st.secrets["upstox"]["api_secret"]
 redirect_uri = st.secrets["upstox"]["redirect_uri"]
 
-# ── Handle OAuth callback (code in URL after Upstox login) ────
-qp = st.query_params
+# ── OAuth callback ─────────────────────────────────────────────
+qp        = st.query_params
 auth_code = qp.get("code")
 
 if auth_code and "access_token" not in st.session_state:
     with st.spinner("Completing Upstox login..."):
         token, err = exchange_code(api_key, api_secret, redirect_uri, auth_code)
     if token:
-        st.session_state["access_token"]  = token
+        st.session_state["access_token"]   = token
         st.session_state["token_acquired"] = time.time()
-        st.query_params.clear()   # remove ?code= from URL
+        st.query_params.clear()
         st.rerun()
     else:
-        st.markdown(
-            f"<div class='err-box'>❌ Login failed: {err}<br>"
-            f"<small>Try clicking Login again.</small></div>",
-            unsafe_allow_html=True)
+        st.error(f"Login failed: {err}")
         st.stop()
 
-# ── Check token validity (Upstox tokens last ~24 hrs) ─────────
+# ── Token expiry check ─────────────────────────────────────────
 if "access_token" in st.session_state:
-    age = time.time() - st.session_state.get("token_acquired", 0)
-    if age > 86400:   # > 24 hours → force re-login
+    if time.time() - st.session_state.get("token_acquired", 0) > 86400:
         del st.session_state["access_token"]
         st.rerun()
 
-# ── Login screen if no token ───────────────────────────────────
+# ── Login screen ───────────────────────────────────────────────
 if "access_token" not in st.session_state:
     auth_url = build_auth_url(api_key, redirect_uri)
     st.markdown(f"""
     <div class='login-box'>
-      <p style='color:#90caf9;font-size:18px;font-weight:500;margin-bottom:0.5rem;'>
-        🔐 Login with Upstox
-      </p>
+      <p style='color:#90caf9;font-size:18px;font-weight:500;margin-bottom:.5rem;'>
+        🔐 Login with Upstox</p>
       <p style='color:#888;font-size:13px;margin-bottom:1.5rem;'>
-        One click per trading day.<br>
-        You'll be redirected back here automatically.
-      </p>
+        One click per trading day.</p>
       <a href='{auth_url}'
          style='display:inline-block;background:#5c4fbd;color:white;
                 padding:12px 32px;border-radius:8px;text-decoration:none;
                 font-size:15px;font-weight:500;'>
-        Login with Upstox →
-      </a>
-    </div>
-    """, unsafe_allow_html=True)
+        Login with Upstox →</a>
+    </div>""", unsafe_allow_html=True)
     st.stop()
 
-# ── Fetch and render both indices ─────────────────────────────
+# ── Fetch & render ─────────────────────────────────────────────
 access_token = st.session_state["access_token"]
 col1, col2   = st.columns(2)
 
 for col, sym in [(col1, "NIFTY"), (col2, "BANKNIFTY")]:
     with col:
-        expiry = nearest_expiry(sym)
 
-        with st.spinner(f"Loading {sym}..."):
-            data, err = fetch_chain(access_token, sym, expiry)
+        # Step 1: get expiry dates from Upstox
+        with st.spinner(f"Getting {sym} expiry dates..."):
+            expiry_dates, exp_err = fetch_expiry_dates(access_token, sym)
 
-        if err == "token_expired":
-            st.markdown(
-                "<div class='err-box'>🔒 Upstox token expired — please login again.</div>",
-                unsafe_allow_html=True)
+        if exp_err == "token_expired":
+            del st.session_state["access_token"]
             st.rerun()
 
-        if err or data is None:
+        if exp_err or not expiry_dates:
             st.markdown(
-                f"<div class='err-box'>⚠️ {sym}: {err}</div>",
+                f"<div class='err-box'>⚠️ {sym}: Could not get expiry dates — {exp_err}</div>",
                 unsafe_allow_html=True)
             continue
 
+        nearest = expiry_dates[0]   # already sorted, first = nearest
+
+        # Step 2: get option chain for nearest expiry
+        with st.spinner(f"Loading {sym} option chain ({nearest})..."):
+            data, chain_err, used_url = fetch_chain(access_token, sym, nearest)
+
+        if chain_err == "token_expired":
+            del st.session_state["access_token"]
+            st.rerun()
+
+        if chain_err or not data:
+            st.markdown(
+                f"<div class='err-box'>⚠️ {sym}: {chain_err}</div>",
+                unsafe_allow_html=True)
+            # Debug panel — shows raw API response
+            with st.expander(f"🔍 Debug — {sym} raw API response"):
+                st.write(f"**Instrument key used:** `{INSTRUMENT_KEY[sym]}`")
+                st.write(f"**Expiry date used:** `{nearest}`")
+                st.write(f"**URL tried:** `{used_url}`")
+                st.write(f"**Available expiries:** `{expiry_dates}`")
+                raw = st.session_state.get(f"raw_{sym}", {})
+                st.json(raw if raw else {"note": "No raw response captured"})
+            continue
+
+        # Step 3: parse and render
         try:
             result = parse(data, sym)
         except Exception as e:
             st.markdown(
                 f"<div class='err-box'>⚠️ {sym}: Parse error — {e}</div>",
                 unsafe_allow_html=True)
+            with st.expander(f"🔍 Debug — {sym} first data row"):
+                st.json(data[0] if data else {})
             continue
 
         st.markdown(
@@ -410,24 +414,24 @@ for col, sym in [(col1, "NIFTY"), (col2, "BANKNIFTY")]:
             f"<div class='spot-lbl'>{sym} Underlying Spot</div>"
             f"<div class='spot-val'>₹ {result['spot']:,.2f}</div>"
             f"<div class='atm-val'>ATM → {result['atm']}"
-            f" &nbsp;|&nbsp; Expiry: {expiry}</div>"
+            f" &nbsp;|&nbsp; Expiry: {nearest}</div>"
             f"</div>",
             unsafe_allow_html=True)
-        render_table(result, sym, expiry)
+        render_table(result, sym, nearest)
 
-# ── Logout button (bottom right) ──────────────────────────────
+# ── Logout + debug ─────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
-col_a, col_b, col_c = st.columns([4, 1, 1])
-with col_c:
+c1, c2, c3 = st.columns([3, 1, 1])
+with c2:
     if st.button("🔓 Logout"):
-        del st.session_state["access_token"]
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
         st.rerun()
 
 st.markdown(
     f"<p class='refresh-note'>Updated: {now.strftime('%H:%M:%S IST')}"
-    f" &nbsp;·&nbsp; Source: Upstox API v2 (works from any server globally)</p>",
+    f" &nbsp;·&nbsp; Source: Upstox API v2/v3</p>",
     unsafe_allow_html=True)
 
-# ── Auto-refresh every 3 min ──────────────────────────────────
 time.sleep(180)
 st.rerun()
