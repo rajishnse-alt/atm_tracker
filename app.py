@@ -115,8 +115,24 @@ def fetch_expiry_dates(token, symbol):
         if r.status_code == 401:
             return None, "token_expired"
         if d.get("status") == "success" and d.get("data"):
-            dates = sorted(d["data"])   # ["2026-05-07", "2026-05-14", ...]
-            return dates, None
+            raw = d["data"]
+            # Upstox returns either list of strings OR list of dicts
+            if raw and isinstance(raw[0], dict):
+                # Extract expiry string from each dict
+                # Try common key names
+                dates = []
+                for item in raw:
+                    exp = (item.get("expiry")
+                           or item.get("expiry_date")
+                           or item.get("date")
+                           or item.get("expiryDate")
+                           or "")
+                    if exp:
+                        dates.append(str(exp))
+            else:
+                dates = [str(x) for x in raw]
+            dates = sorted(set(dates))
+            return dates if dates else None, None if dates else "Empty expiry list"
         return None, f"Expiry fetch failed: {d}"
     except Exception as e:
         return None, str(e)
