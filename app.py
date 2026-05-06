@@ -38,6 +38,9 @@ st.markdown("""
     .setup-box{background:#1a2a1a;border:1px solid #1f5f1f;border-radius:8px;
                padding:1rem 1.25rem;color:#a5d6a7;font-size:13px;line-height:2;}
     .refresh-note{font-size:11px;color:#555;text-align:right;margin-top:6px;}
+    .section-header{color:#ffd54f;font-size:13px;font-weight:600;
+                    text-transform:uppercase;letter-spacing:1px;
+                    margin:1.2rem 0 .4rem;border-bottom:1px solid #2a2a4a;padding-bottom:4px;}
     code{background:#2a2a3a;padding:2px 6px;border-radius:4px;font-size:12px;color:#90caf9;}
 </style>
 """, unsafe_allow_html=True)
@@ -45,13 +48,52 @@ st.markdown("""
 # ─────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────
-IST         = pytz.timezone("Asia/Kolkata")
-STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
+IST = pytz.timezone("Asia/Kolkata")
 
+# Strike step — indices are fixed; stocks are derived from live data
+STRIKE_STEP_FIXED = {
+    "NIFTY":     50,
+    "BANKNIFTY": 100,
+}
+
+def infer_strike_step(data):
+    """Derive strike step from sorted unique strikes in the option chain data."""
+    strikes = sorted({float(row.get("strike_price", 0)) for row in data
+                      if row.get("strike_price")})
+    if len(strikes) < 2:
+        return 50  # fallback
+    diffs = [strikes[i+1] - strikes[i] for i in range(len(strikes)-1)]
+    # Use the most common difference (mode) to ignore any gaps
+    from collections import Counter
+    step = Counter(diffs).most_common(1)[0][0]
+    return int(step)
+
+# Upstox instrument keys
 INSTRUMENT_KEY = {
     "NIFTY":     "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "HDFCBANK":  "NSE_EQ|INE040A01034",
+    "ICICIBANK": "NSE_EQ|INE090A01021",
+    "SBIN":      "NSE_EQ|INE062A01020",
+    "RELIANCE":  "NSE_EQ|INE002A01018",
 }
+
+# Display names
+DISPLAY_NAME = {
+    "NIFTY":     "NIFTY",
+    "BANKNIFTY": "BANKNIFTY",
+    "HDFCBANK":  "HDFC Bank",
+    "ICICIBANK": "ICICI Bank",
+    "SBIN":      "SBI",
+    "RELIANCE":  "Reliance",
+}
+
+# Group layout: (group_title, [sym1, sym2])
+SYMBOL_GROUPS = [
+    ("📈 Index Options",  ["NIFTY",    "BANKNIFTY"]),
+    ("🏦 Bank Stocks",    ["HDFCBANK", "ICICIBANK"]),
+    ("🏢 Large Cap Stocks", ["SBIN",   "RELIANCE"]),
+]
 
 # Try both API versions
 UPSTOX_OC_URLS = [
@@ -146,8 +188,8 @@ def fetch_chain(token, symbol, expiry_date):
             and now - st.session_state[time_key] < 180):
         return st.session_state[cache_key], None, st.session_state.get(f"oc_url_{symbol}", "cached")
 
-    last_err  = "No response"
-    last_raw  = {}
+    last_err = "No response"
+    last_raw = {}
 
     for url in UPSTOX_OC_URLS:
         try:
@@ -188,7 +230,8 @@ def snap(price, step):
     return int(round(price / step) * step)
 
 def parse(data, symbol):
-    step   = STRIKE_STEP[symbol]
+    # Use fixed step for indices; infer from live data for stocks
+    step = STRIKE_STEP_FIXED.get(symbol) or infer_strike_step(data)
     ce_map = {}
     pe_map = {}
     spot   = None
@@ -244,11 +287,11 @@ def parse(data, symbol):
 # RENDER TABLE
 # ─────────────────────────────────────────────
 def render_table(r, symbol, expiry):
-    bear  = r["bearish"]
-    bcls  = "bias-bear" if bear else "bias-bull"
-    btxt  = (f"▼ &nbsp;BEARISH &nbsp;(√CE {r['ce_sqrt']:.2f} > √PE {r['pe_sqrt']:.2f})"
-             if bear else
-             f"▲ &nbsp;BULLISH &nbsp;(√PE {r['pe_sqrt']:.2f} > √CE {r['ce_sqrt']:.2f})")
+    bear = r["bearish"]
+    bcls = "bias-bear" if bear else "bias-bull"
+    btxt = (f"▼ &nbsp;BEARISH &nbsp;(√CE {r['ce_sqrt']:.2f} > √PE {r['pe_sqrt']:.2f})"
+            if bear else
+            f"▲ &nbsp;BULLISH &nbsp;(√PE {r['pe_sqrt']:.2f} > √CE {r['ce_sqrt']:.2f})")
     ce_html = "".join(
         f"<tr><td class='ce-lbl'>{x['label']}</td>"
         f"<td class='strike-ce'>{x['strike']}</td>"
@@ -262,7 +305,7 @@ def render_table(r, symbol, expiry):
     st.markdown(f"""
     <table>
       <thead><tr>
-        <th>{symbol} &nbsp;|&nbsp; ATM: {r['atm']}
+        <th>{DISPLAY_NAME[symbol]} &nbsp;|&nbsp; ATM: {r['atm']}
             &nbsp;|&nbsp; Spot: ₹{r['spot']:,.2f}
             &nbsp;|&nbsp; Exp: {expiry}</th>
         <th>Strike</th><th>Price</th>
@@ -277,6 +320,76 @@ def render_table(r, symbol, expiry):
         <tr class='{bcls}'><td>BIAS</td><td>√CE vs √PE</td><td>{btxt}</td></tr>
       </tbody>
     </table>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# RENDER ONE SYMBOL (reusable)
+# ─────────────────────────────────────────────
+def render_symbol(access_token, sym):
+    with st.spinner(f"Getting {DISPLAY_NAME[sym]} expiry dates..."):
+        expiry_dates, exp_err = fetch_expiry_dates(access_token, sym)
+
+    if exp_err == "token_expired":
+        del st.session_state["access_token"]
+        st.rerun()
+
+    if exp_err or not expiry_dates:
+        st.markdown(
+            f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: Could not get expiry dates — {exp_err}</div>",
+            unsafe_allow_html=True)
+        return
+
+    expiry_key = f"selected_expiry_{sym}"
+    if expiry_key not in st.session_state:
+        st.session_state[expiry_key] = expiry_dates[0]
+    if st.session_state[expiry_key] not in expiry_dates:
+        st.session_state[expiry_key] = expiry_dates[0]
+
+    selected = st.selectbox(
+        f"{DISPLAY_NAME[sym]} — Select Expiry",
+        options=expiry_dates,
+        index=expiry_dates.index(st.session_state[expiry_key]),
+        key=f"sb_{sym}",
+    )
+    st.session_state[expiry_key] = selected
+
+    with st.spinner(f"Loading {DISPLAY_NAME[sym]} option chain ({selected})..."):
+        data, chain_err, used_url = fetch_chain(access_token, sym, selected)
+
+    if chain_err == "token_expired":
+        del st.session_state["access_token"]
+        st.rerun()
+
+    if chain_err or not data:
+        st.markdown(
+            f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: {chain_err}</div>",
+            unsafe_allow_html=True)
+        with st.expander(f"🔍 Debug — {DISPLAY_NAME[sym]} raw API response"):
+            st.write(f"**Instrument key:** `{INSTRUMENT_KEY[sym]}`")
+            st.write(f"**Expiry used:** `{selected}`")
+            st.write(f"**URL tried:** `{used_url}`")
+            raw = st.session_state.get(f"raw_{sym}", {})
+            st.json(raw if raw else {"note": "No raw response captured"})
+        return
+
+    try:
+        result = parse(data, sym)
+    except Exception as e:
+        st.markdown(
+            f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: Parse error — {e}</div>",
+            unsafe_allow_html=True)
+        with st.expander(f"🔍 Debug — {DISPLAY_NAME[sym]} first data row"):
+            st.json(data[0] if data else {})
+        return
+
+    st.markdown(
+        f"<div class='card'>"
+        f"<div class='spot-lbl'>{DISPLAY_NAME[sym]} Underlying Spot</div>"
+        f"<div class='spot-val'>₹ {result['spot']:,.2f}</div>"
+        f"<div class='atm-val'>ATM → {result['atm']}"
+        f" &nbsp;|&nbsp; Expiry: {selected}</div>"
+        f"</div>",
+        unsafe_allow_html=True)
+    render_table(result, sym, selected)
 
 # ─────────────────────────────────────────────
 # SETUP GUIDE
@@ -363,89 +476,17 @@ if "access_token" not in st.session_state:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-# ── Fetch & render ─────────────────────────────────────────────
+# ── Fetch & render — grouped layout ───────────────────────────
 access_token = st.session_state["access_token"]
-col1, col2   = st.columns(2)
 
-for col, sym in [(col1, "NIFTY"), (col2, "BANKNIFTY")]:
-    with col:
+for group_title, symbols in SYMBOL_GROUPS:
+    st.markdown(f"<div class='section-header'>{group_title}</div>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    for col, sym in zip([col1, col2], symbols):
+        with col:
+            render_symbol(access_token, sym)
 
-        # Step 1: get expiry dates from Upstox
-        with st.spinner(f"Getting {sym} expiry dates..."):
-            expiry_dates, exp_err = fetch_expiry_dates(access_token, sym)
-
-        if exp_err == "token_expired":
-            del st.session_state["access_token"]
-            st.rerun()
-
-        if exp_err or not expiry_dates:
-            st.markdown(
-                f"<div class='err-box'>⚠️ {sym}: Could not get expiry dates — {exp_err}</div>",
-                unsafe_allow_html=True)
-            continue
-
-        # ── Expiry dropdown ────────────────────────────────────
-        expiry_key = f"selected_expiry_{sym}"
-        if expiry_key not in st.session_state:
-            st.session_state[expiry_key] = expiry_dates[0]
-
-        # Guard: if stored expiry no longer exists in list, reset to nearest
-        if st.session_state[expiry_key] not in expiry_dates:
-            st.session_state[expiry_key] = expiry_dates[0]
-
-        selected = st.selectbox(
-            f"{sym} — Select Expiry",
-            options=expiry_dates,
-            index=expiry_dates.index(st.session_state[expiry_key]),
-            key=f"sb_{sym}",
-        )
-        st.session_state[expiry_key] = selected
-        nearest = selected
-
-        # Step 2: get option chain for selected expiry
-        with st.spinner(f"Loading {sym} option chain ({nearest})..."):
-            data, chain_err, used_url = fetch_chain(access_token, sym, nearest)
-
-        if chain_err == "token_expired":
-            del st.session_state["access_token"]
-            st.rerun()
-
-        if chain_err or not data:
-            st.markdown(
-                f"<div class='err-box'>⚠️ {sym}: {chain_err}</div>",
-                unsafe_allow_html=True)
-            # Debug panel — shows raw API response
-            with st.expander(f"🔍 Debug — {sym} raw API response"):
-                st.write(f"**Instrument key used:** `{INSTRUMENT_KEY[sym]}`")
-                st.write(f"**Expiry date used:** `{nearest}`")
-                st.write(f"**URL tried:** `{used_url}`")
-                st.write(f"**Available expiries:** `{expiry_dates}`")
-                raw = st.session_state.get(f"raw_{sym}", {})
-                st.json(raw if raw else {"note": "No raw response captured"})
-            continue
-
-        # Step 3: parse and render
-        try:
-            result = parse(data, sym)
-        except Exception as e:
-            st.markdown(
-                f"<div class='err-box'>⚠️ {sym}: Parse error — {e}</div>",
-                unsafe_allow_html=True)
-            with st.expander(f"🔍 Debug — {sym} first data row"):
-                st.json(data[0] if data else {})
-            continue
-
-        st.markdown(
-            f"<div class='card'>"
-            f"<div class='spot-lbl'>{sym} Underlying Spot</div>"
-            f"<div class='spot-val'>₹ {result['spot']:,.2f}</div>"
-            f"<div class='atm-val'>ATM → {result['atm']}"
-            f" &nbsp;|&nbsp; Expiry: {nearest}</div>"
-            f"</div>",
-            unsafe_allow_html=True)
-        render_table(result, sym, nearest)
-
-# ── Logout + debug ─────────────────────────────────────────────
+# ── Logout ─────────────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
 c1, c2, c3 = st.columns([3, 1, 1])
 with c2:
