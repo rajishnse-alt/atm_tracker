@@ -152,6 +152,16 @@ st.markdown("""
   .r-bias-bear { background: var(--bear-dim); }
   .r-bias-bear td { color: var(--bear) !important; }
 
+  /* ── Trend row ────────────────────────────── */
+  .r-trend { border-radius: 0 0 8px 8px; margin-top: 1px; }
+  .r-trend td { font-weight: 700; font-size: 12px; padding: 5px 6px; letter-spacing: .3px; }
+  .r-trend-bull { background: #002a10; border-top: 1px solid var(--bull); }
+  .r-trend-bull td { color: var(--bull) !important; }
+  .r-trend-bear { background: #1e0404; border-top: 1px solid var(--bear); }
+  .r-trend-bear td { color: var(--bear) !important; }
+  .r-trend-neut { background: #1a1400; border-top: 1px solid var(--gold); }
+  .r-trend-neut td { color: var(--gold) !important; }
+
   .tag-ce {
     display: inline-block;
     background: #102040; color: var(--ce);
@@ -324,7 +334,6 @@ def exchange_code(api_key, api_secret, redirect_uri, code):
 # FETCH VIX
 # ─────────────────────────────────────────────
 def fetch_vix(token):
-    """Fetch India VIX from Upstox market quote endpoint."""
     cache_key = "vix_data"
     time_key  = "vix_time"
     now = time.time()
@@ -343,7 +352,6 @@ def fetch_vix(token):
         d = r.json()
         if d.get("status") == "success":
             data = d.get("data", {})
-            # Try various key formats Upstox may return
             for key in data:
                 q = data[key]
                 ltp = q.get("last_price") or q.get("ltp") or 0
@@ -356,11 +364,10 @@ def fetch_vix(token):
     except Exception:
         pass
 
-    # Fallback: try alternate key
     try:
         r = requests.get(
             UPSTOX_MARKET_QUOTE,
-            params={"symbol": "NSE_INDEX|Nifty 50"},  # use to see structure
+            params={"symbol": "NSE_INDEX|Nifty 50"},
             headers=upstox_headers(token),
             timeout=10
         )
@@ -368,17 +375,12 @@ def fetch_vix(token):
         pass
 
     cached = st.session_state.get(cache_key)
-    return cached  # return stale if available
+    return cached
 
 # ─────────────────────────────────────────────
 # FETCH OTM OPTION LTPs for RRS engine
 # ─────────────────────────────────────────────
 def fetch_otm_ltps(token, symbol, expiry, atm, step, chain_data):
-    """
-    Extract LTPs for ATM and OTM strikes (+1..+4 CE, -1..-4 PE)
-    directly from the already-fetched chain data — no extra API call needed.
-    Also returns ATM CE/PE LTP.
-    """
     ce_map = {}
     pe_map = {}
     for row in chain_data:
@@ -389,10 +391,8 @@ def fetch_otm_ltps(token, symbol, expiry, atm, step, chain_data):
         pe_map[strike] = float(pe_md.get("ltp")   or 0)
 
     result = {}
-    # ATM
     result["ce_atm"] = ce_map.get(float(atm), 0.0)
     result["pe_atm"] = pe_map.get(float(atm), 0.0)
-    # OTM +1..+4 CE, -1..-4 PE
     for i in range(1, 5):
         result[f"ce_{i}"] = ce_map.get(float(atm + i * step), 0.0)
         result[f"pe_{i}"] = pe_map.get(float(atm - i * step), 0.0)
@@ -505,7 +505,6 @@ def parse(data, symbol):
     ce_sqrt = math.sqrt(ce_sum) if ce_sum > 0 else 0.0
     pe_sqrt = math.sqrt(pe_sum) if pe_sum > 0 else 0.0
 
-    # PCR: CE = ATM to ATM+6, PE = ATM to ATM-6
     ce_pcr_strikes = [atm + (i * step) for i in range(-10, 11)]
     pe_pcr_strikes = [atm - (i * step) for i in range(-10, 11)]
     total_ce_oi  = sum(ce_oi.get(float(s), 0.0) for s in ce_pcr_strikes)
@@ -523,10 +522,9 @@ def parse(data, symbol):
                 total_ce_oi=total_ce_oi)
 
 # ─────────────────────────────────────────────
-# RRS / ANALYSIS ENGINE  (ported from PineScript)
+# RRS / ANALYSIS ENGINE
 # ─────────────────────────────────────────────
 def calc_trading_days_to_expiry(expiry_str):
-    """Approximate trading days remaining to expiry date string YYYY-MM-DD."""
     try:
         now_ist   = datetime.now(IST).date()
         exp_parts = expiry_str.split("-")
@@ -541,7 +539,6 @@ def calc_trading_days_to_expiry(expiry_str):
         return 1
 
 def get_strike_step_ps(symbol):
-    """PineScript-style strike step lookup."""
     sym = symbol.upper()
     if "BANKNIFTY" in sym:   return 100
     if "FINNIFTY"  in sym:   return 50
@@ -549,24 +546,17 @@ def get_strike_step_ps(symbol):
     return STRIKE_STEP_FIXED.get(symbol, 50)
 
 def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state, symbol):
-    """
-    Full RRS + Spike + BTST engine ported from PineScript.
-    prev_state: dict with previous-bar erosion/dominance/vol history, or empty dict.
-    Returns dict with all computed signals and updated state.
-    """
     spot    = result["spot"]
     atm     = result["atm"]
     step    = result["step"]
     ce_atm  = otm_ltps["ce_atm"]
     pe_atm  = otm_ltps["pe_atm"]
 
-    # ── OTM LTPs ──────────────────────────────────────────────────────
     ce1 = otm_ltps["ce_1"]; ce2 = otm_ltps["ce_2"]
     ce3 = otm_ltps["ce_3"]; ce4 = otm_ltps["ce_4"]
     pe1 = otm_ltps["pe_1"]; pe2 = otm_ltps["pe_2"]
     pe3 = otm_ltps["pe_3"]; pe4 = otm_ltps["pe_4"]
 
-    # ── Day-open values from prev_state (persist across refresh cycles) ──
     ce1_open = prev_state.get("ce1_open") or ce1 or 0.001
     ce2_open = prev_state.get("ce2_open") or ce2 or 0.001
     ce3_open = prev_state.get("ce3_open") or ce3 or 0.001
@@ -576,7 +566,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     pe3_open = prev_state.get("pe3_open") or pe3 or 0.001
     pe4_open = prev_state.get("pe4_open") or pe4 or 0.001
 
-    # Erosion per strike: (open - now) / open
     def erosion(now_val, open_val):
         if open_val and open_val != 0:
             return (open_val - now_val) / open_val
@@ -591,7 +580,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     put_erosion  = (pe1e + pe2e + pe3e + pe4e) / 4
     dominance    = put_erosion - call_erosion
 
-    # 3-period rolling averages of erosion
     prev_ce1 = prev_state.get("prev_call_ero1", call_erosion)
     prev_ce2 = prev_state.get("prev_call_ero2", call_erosion)
     prev_pe1 = prev_state.get("prev_put_ero1", put_erosion)
@@ -602,7 +590,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     momentum_diff = put_avg3 - call_avg3
     abs_diff      = abs(momentum_diff)
 
-    # Dominance history (20-bar rolling)
     dom_history = list(prev_state.get("dom_history", []))
     dom_history.append(dominance)
     if len(dom_history) > 20:
@@ -628,7 +615,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     prev_sideways = prev_state.get("prev_sideways", False)
     compression_break = (prev_sideways and abs(dominance_accel) > threshold_rrs * 0.5 and strong_move)
 
-    # Gamma Squeeze
     gamma_build = (abs(dominance) > threshold_rrs and
                    volatility > prev_vol1 and
                    momentum_diff * dominance > 0)
@@ -638,7 +624,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     else:
         gamma_signal = ""
 
-    # Writer Capitulation
     writer_cap = (strong_move and
                   abs(dominance - prev_dom1) > threshold_rrs * 1.5 and
                   momentum_diff * dominance < 0)
@@ -647,14 +632,12 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     else:
         writer_signal = ""
 
-    # IV Crush
     prev_iv_peak = prev_state.get("prev_iv_peak", False)
     iv_peak        = volatility > prev_vol1 and prev_vol1 > prev_vol2
     iv_compression = volatility < prev_vol1 and abs(momentum_diff) < threshold_rrs
     iv_crush = prev_iv_peak and iv_compression
     iv_signal = "📉 IV CRUSH" if iv_crush else ""
 
-    # Expiry signals
     exp_parts = expiry.split("-")
     is_expiry_day = False
     try:
@@ -673,7 +656,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     else:
         expiry_signal = ""
 
-    # Smart Money Probability
     score = sum([
         1.0 if gamma_build       else 0.0,
         1.0 if writer_cap        else 0.0,
@@ -693,7 +675,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     inst_signal = (gamma_signal or writer_signal or iv_signal or
                    expiry_signal or smart_bias or "—")
 
-    # OTM Trend arrow
     if sideways:
         otm_trend_arrow = "➖ SIDEWAYS"
     elif momentum_diff > 0:
@@ -712,7 +693,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     otm_trend_final = (gamma_signal or writer_signal or iv_signal or
                        expiry_signal or smart_bias or otm_trend_arrow)
 
-    # ── Gamma + Spike Score  (ATM-based) ──────────────────────────────
     dist_from_atm = abs(spot - atm)
     gamma_score   = 100.0 / (1.0 + (dist_from_atm / step))
 
@@ -790,7 +770,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     else:
         spike_signal = "◆ NEUTRAL / WAIT"; sig_color = "neut"
 
-    # ── SPCL VAL ────────────────────────────────────────────────────
     vix_day_open = (vix_info or {}).get("day_open") or vix_current
     vix_sqrt = math.sqrt(vix_day_open) if vix_day_open else None
     spcl_val = None
@@ -798,12 +777,11 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         base_spcl = (math.sqrt(ce_atm + pe_atm) * 3.14) / 2
         spcl_val  = (base_spcl + (base_spcl - vix_sqrt)) / 2
 
-    # ── Expected Move ──────────────────────────────────────────────
     trading_days_left = calc_trading_days_to_expiry(expiry)
     per_day_vix = (vix_current / math.sqrt(365)) * math.sqrt(trading_days_left) if vix_current else None
     vix_per_day = vix_current / trading_days_left if (vix_current and trading_days_left) else None
 
-    spot_ref     = spot  # In PineScript this uses priceConsidered (15:03 open); we use current spot
+    spot_ref     = spot
     exp_move_pct = per_day_vix
     exp_move_pts = (spot_ref * per_day_vix / 100.0) if per_day_vix else None
 
@@ -818,7 +796,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     upper_level = spot_ref + exp_move_pts if exp_move_pts else None
     lower_level = spot_ref - exp_move_pts if exp_move_pts else None
 
-    # ── Intrinsic / Time Value ───────────────────────────────────
     ce_intrinsic = max(spot - atm, 0)
     pe_intrinsic = max(float(atm) - spot, 0)
     ce_tv = max(ce_atm - ce_intrinsic, 0) if ce_atm else None
@@ -826,8 +803,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     ce_iv_pct_display = (ce_intrinsic / ce_atm * 100) if ce_atm else 0.0
     pe_iv_pct_display = (pe_intrinsic / pe_atm * 100) if pe_atm else 0.0
 
-    # ── BTST Decay Edge ───────────────────────────────────────────
-    # 3-min rolling erosion averages (use same prev_state arrays)
     prev_avg_ce = prev_state.get("avg_ce_erosion", call_erosion)
     prev_avg_pe = prev_state.get("avg_pe_erosion", put_erosion)
     avg_ce_erosion = (call_erosion + prev_avg_ce) / 2
@@ -872,7 +847,6 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         btst_signal = "◆ NO EDGE"; btst_color = "neut"
         btst_target = "Decay balanced — skip BTST"
 
-    # ── Updated state to persist across 3-min refreshes ──────────
     new_state = dict(
         ce1_open=ce1_open, ce2_open=ce2_open, ce3_open=ce3_open, ce4_open=ce4_open,
         pe1_open=pe1_open, pe2_open=pe2_open, pe3_open=pe3_open, pe4_open=pe4_open,
@@ -885,39 +859,30 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     )
 
     return dict(
-        # Identification
         spot=spot, atm=atm, step=step,
-        # OTM data
         ce_atm=ce_atm, pe_atm=pe_atm,
-        # Expected move
         vix_current=vix_current, vix_day_open=vix_day_open,
         trading_days_left=trading_days_left,
         per_day_vix=per_day_vix, vix_per_day=vix_per_day,
         exp_move_pts=exp_move_pts, exp_move_pct=exp_move_pct,
         upper_level=upper_level, lower_level=lower_level,
         em_upper_strike=em_upper_strike, em_lower_strike=em_lower_strike,
-        # Option metrics
         ce_intrinsic=ce_intrinsic, pe_intrinsic=pe_intrinsic,
         ce_tv=ce_tv, pe_tv=pe_tv,
         ce_iv_pct=ce_iv_pct_display, pe_iv_pct=pe_iv_pct_display,
-        # SPCL
         spcl_val=spcl_val,
-        # Gamma/spike
         dist_from_atm=dist_from_atm, gamma_score=gamma_score,
         vix_boost=vix_boost, ce_spike_score=ce_spike_score, pe_spike_score=pe_spike_score,
         score_diff=score_diff,
         spike_signal=spike_signal, sig_color=sig_color,
         inst_signal=inst_signal,
         otm_trend_final=otm_trend_final, smart_prob=smart_prob,
-        # RRS
         dominance=dominance, momentum_diff=momentum_diff,
         strong_move=strong_move, sideways=sideways,
-        # BTST
         btst_signal=btst_signal, btst_color=btst_color, btst_target=btst_target,
         ce_edge_pct=ce_edge_pct, pe_edge_pct=pe_edge_pct,
         decay_velocity=decay_velocity,
         is_expiry_day=is_expiry_day,
-        # persist
         new_state=new_state,
     )
 
@@ -943,7 +908,7 @@ def pcr_html(pcr):
             f"<span class='pcr-label' style='margin-left:4px;font-size:9px;'>CE:ATM→+6 | PE:ATM→-6</span>"
             f"</div>")
 
-def render_table(r, symbol, expiry):
+def render_table(r, symbol, expiry, analysis=None):
     bear = r["bearish"]
     bias_cls   = "r-bias-bear" if bear else "r-bias-bull"
     bias_arrow = "▼" if bear else "▲"
@@ -970,6 +935,28 @@ def render_table(r, symbol, expiry):
 
     ce_rows_html = "".join(ce_row(x) for x in r["ce_rows"])
     pe_rows_html = "".join(pe_row(x) for x in r["pe_rows"])
+
+    # ── Trend row (mirrors Pine trendArrow — inst signal takes priority) ──
+    trend_row_html = ""
+    if analysis:
+        inst  = analysis.get("inst_signal", "")
+        otm   = analysis.get("otm_trend_final", "")
+        # Prefer the more specific institutional signal over raw OTM trend
+        display_trend = inst if (inst and inst != "—") else otm
+
+        if any(x in display_trend for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑"]):
+            tr_cls = "r-trend-bull"
+        elif any(x in display_trend for x in ["⬇", "BEAR", "CALL WRITER", "IV CRUSH", "GAMMA↓", "PRE-GAMMA ↓"]):
+            tr_cls = "r-trend-bear"
+        else:
+            tr_cls = "r-trend-neut"
+
+        trend_row_html = (
+            f"<tr class='r-trend {tr_cls}'>"
+            f"<td colspan='2'>📡 TREND</td>"
+            f"<td colspan='2'>{display_trend}</td>"
+            f"</tr>"
+        )
 
     st.markdown(f"""
     <table class='opt-table'>
@@ -1004,6 +991,7 @@ def render_table(r, symbol, expiry):
           <td colspan='2'>{bias_arrow} {bias_txt}</td>
           <td colspan='2'>{bias_detail}</td>
         </tr>
+        {trend_row_html}
       </tbody>
     </table>
     """, unsafe_allow_html=True)
@@ -1020,8 +1008,6 @@ def _btst_cls(btst_color):
     return "btst-neut"
 
 def render_rrs_table(a, symbol, expiry):
-    """Render the PineScript analysis table for one instrument."""
-
     def row(label, v_left, v_right, lc="v-w", rc="v-gray"):
         return (f"<tr>"
                 f"<td class='lbl'>{label}</td>"
@@ -1035,23 +1021,19 @@ def render_rrs_table(a, symbol, expiry):
                 f"<td>{c1}</td><td>{c2}</td>"
                 f"</tr>")
 
-    # Spike signal row class
     sig_cls  = _sig_row_class(a["sig_color"])
     btst_cls = _btst_cls(a["btst_color"])
 
-    # OTM trend colour
     if "⬆" in a["otm_trend_final"]: otm_c = "v-g"
     elif "⬇" in a["otm_trend_final"]: otm_c = "v-r"
     else: otm_c = "v-gray"
 
-    # Gamma score colour
     gs = a["gamma_score"]
     if gs > 70: gsc = "v-g"
     elif gs > 40: gsc = "v-o"
     else: gsc = "v-r"
     gs_label = "High — near ATM" if gs > 70 else ("Medium" if gs > 40 else "Low — far OTM")
 
-    # Inst signal colour
     inst = a["inst_signal"]
     if "↑" in inst or "BULL" in inst or "PUT WRITER" in inst: inst_c = "v-g"
     elif "↓" in inst or "BEAR" in inst or "IV CRUSH" in inst or "CALL WRITER" in inst: inst_c = "v-r"
@@ -1060,13 +1042,11 @@ def render_rrs_table(a, symbol, expiry):
     elif "SMART" in inst or "BUILDING" in inst: inst_c = "v-y"
     else: inst_c = "v-gray"
 
-    # Dominance colour
     thr = 0.04
     dom_c = "v-g" if a["dominance"] > thr else ("v-r" if a["dominance"] < -thr else "v-gray")
     mom_c = "v-g" if a["momentum_diff"] > 0 else ("v-r" if a["momentum_diff"] < 0 else "v-gray")
     mom_state = "Strong" if a["strong_move"] else ("Sideways" if a["sideways"] else "Moderate")
 
-    # Expected move strings
     em_up = _na(a["em_upper_strike"], "{:.0f}")
     em_lo = _na(a["em_lower_strike"], "{:.0f}")
     emp   = _na(a["exp_move_pts"],    "{:.2f}")
@@ -1078,7 +1058,6 @@ def render_rrs_table(a, symbol, expiry):
 
     vix_c = a["vix_current"]
     vix_o = a["vix_day_open"]
-
     spcl  = _na(a["spcl_val"], "{:.2f}")
 
     html = f"""
@@ -1243,13 +1222,12 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # ── Compute analysis ──
     try:
         analysis = compute_rrs_analysis(result, otm_ltps, selected, vix_info, now_ist, prev_state, sym)
-        # Persist updated state
         st.session_state[state_key] = analysis["new_state"]
     except Exception as e:
         analysis = None
         st.markdown(f"<div class='err-box'>⚠️ Analysis error — {e}</div>", unsafe_allow_html=True)
 
-    # ── Instrument card ───────────────────────
+    # ── Instrument card ──
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -1266,9 +1244,10 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"</div>",
         unsafe_allow_html=True)
 
-    render_table(result, sym, selected)
+    # ── Options table (with trend row) ──
+    render_table(result, sym, selected, analysis)
 
-    # ── RRS / Analysis table ──────────────────
+    # ── RRS / Analysis table ──
     if analysis:
         render_rrs_table(analysis, sym, selected)
 
@@ -1316,7 +1295,7 @@ api_key      = st.secrets["upstox"]["api_key"]
 api_secret   = st.secrets["upstox"]["api_secret"]
 redirect_uri = st.secrets["upstox"]["redirect_uri"]
 
-# ── OAuth callback ──────────────────────────────────────────────
+# ── OAuth callback ──
 qp        = st.query_params
 auth_code = qp.get("code")
 
@@ -1353,11 +1332,11 @@ if "access_token" not in st.session_state:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-# ── Fetch VIX once (shared across all symbols) ─────────────────
+# ── Fetch VIX once (shared across all symbols) ──
 access_token = st.session_state["access_token"]
 vix_info = fetch_vix(access_token)
 
-# ── Render groups ───────────────────────────────────────────────
+# ── Render groups ──
 for group_title, symbols in SYMBOL_GROUPS:
     st.markdown(f"<div class='sec-hdr'>{group_title}</div>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -1365,7 +1344,7 @@ for group_title, symbols in SYMBOL_GROUPS:
         with col:
             render_symbol(access_token, sym, vix_info, now)
 
-# ── Logout ──────────────────────────────────────────────────────
+# ── Logout ──
 st.markdown("<br>", unsafe_allow_html=True)
 c1, c2, c3 = st.columns([4, 1, 1])
 with c2:
