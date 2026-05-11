@@ -445,7 +445,20 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     # ── EMA of erosion — Pine ta.ema(callErosion, trendEmaLen=5) ──────────
     call_ema = ema_update(prev_state.get("call_ema"), call_erosion, TREND_EMA_LEN)
     put_ema  = ema_update(prev_state.get("put_ema"),  put_erosion,  TREND_EMA_LEN)
-    momentum_diff = put_ema - call_ema               # Pine: momentumDiff (EMA-based)
+    ema_momentum = put_ema - call_ema
+
+    # ── Warmup blending ───────────────────────────────────────────────────
+    # Pine's EMA is warmed over 100s of bars; ours starts fresh each session.
+    # For the first ~5 bars (15 min), blend raw erosion so writer/gamma can
+    # fire immediately on a big move — matching Pine's always-warm behaviour.
+    warmup_bars  = prev_state.get("warmup_bars", 0) + 1
+    raw_momentum = put_erosion - call_erosion
+    if warmup_bars < 6:
+        # Linear blend: bar 1 → 80% raw, bar 5 → 20% raw, bar 6+ → pure EMA
+        raw_weight    = max(0.0, (6 - warmup_bars) / 6.0) * 0.8
+        momentum_diff = raw_weight * raw_momentum + (1.0 - raw_weight) * ema_momentum
+    else:
+        momentum_diff = ema_momentum                # Pine: momentumDiff (EMA-based)
 
     # ── Fast(3) / slow(8) EMA for pre-gamma ema-divergence ───────────────
     call_ema_fast = ema_update(prev_state.get("call_ema_fast"), call_erosion, 3)
@@ -578,9 +591,16 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     #   → call erosion recovers → dominance_accel turns POSITIVE
     #   → accel * dominance < 0  ← CALL WRITER capitulation fires ✓
     #
-    writer_cap = (strong_move and
-                  dominance_accel * dominance < 0 and
-                  abs(dominance_accel) > dom_avg * 0.5)
+    # Raw writer cap: handles the case where EMA hasn't warmed up yet but
+    # the raw dominance move is clearly large (cold-start safety net).
+    raw_writer_cap = (abs(dominance_accel) > dom_avg * 0.8 and          # stronger raw threshold
+                      dominance_accel * dominance < 0 and
+                      abs(raw_momentum) > DOMINANCE_THRESHOLD * 1.5)    # raw erosion confirms
+
+    writer_cap = (raw_writer_cap or
+                  (strong_move and
+                   dominance_accel * dominance < 0 and
+                   abs(dominance_accel) > dom_avg * 0.5))
     if writer_cap:
         writer_signal = "💣 PUT WRITER" if dominance > 0 else "💣 CALL WRITER"
     else:
@@ -780,6 +800,7 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     new_state = dict(
         ce1_open=ce1_open, ce2_open=ce2_open, ce3_open=ce3_open, ce4_open=ce4_open,
         pe1_open=pe1_open, pe2_open=pe2_open, pe3_open=pe3_open, pe4_open=pe4_open,
+        warmup_bars=warmup_bars,
         call_ema=call_ema, put_ema=put_ema,
         call_ema_fast=call_ema_fast, put_ema_fast=put_ema_fast,
         call_ema_slow=call_ema_slow, put_ema_slow=put_ema_slow,
@@ -823,6 +844,7 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         score_diff=score_diff,
         spike_signal=spike_signal, sig_color=sig_color,
         trend_arrow=trend_arrow, signal_source=signal_source,
+        warmup_bars=warmup_bars,
         core_trend=core_trend,
         writer_signal=writer_signal, pre_gamma_signal=pre_gamma_signal, gamma_signal=gamma_signal,
         confirmed_trend=confirmed_trend,
@@ -894,10 +916,12 @@ def render_table(r, symbol, expiry, analysis=None):
     if analysis:
         ta     = analysis.get("trend_arrow", "")
         src    = analysis.get("signal_source", "")
+        wb     = analysis.get("warmup_bars", 0)
+        warm   = "" if wb >= 6 else f" <span style='color:#666;font-size:9px;'>⚠ warming {wb}/6</span>"
         tr_cls = _trend_row_class(ta)
         trend_row_html = (
             f"<tr class='r-trend {tr_cls}'>"
-            f"<td colspan='2'>📡 TREND  <span style='font-size:9px;opacity:.6;font-weight:400;'>({src})</span></td>"
+            f"<td colspan='2'>📡 TREND  <span style='font-size:9px;opacity:.6;font-weight:400;'>({src}){warm}</span></td>"
             f"<td colspan='2'>{ta}</td>"
             f"</tr>"
         )
