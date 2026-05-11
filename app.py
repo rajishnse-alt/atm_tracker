@@ -37,22 +37,10 @@ st.markdown("""
   html, body, .stApp { background: var(--bg) !important; }
   .block-container { padding: .75rem 1.2rem 1rem !important; }
 
-  /* ── Header ───────────────────────────────── */
-  .app-header {
-    display: flex; align-items: baseline; gap: 10px;
-    margin-bottom: 4px;
-  }
-  .app-title {
-    font-family: var(--display); font-size: 22px; font-weight: 800;
-    color: white; letter-spacing: -.3px;
-  }
-  .app-sub {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--muted); letter-spacing: .5px;
-  }
-  .mkt-dot { font-size: 11px; font-family: var(--mono); }
+  .app-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .app-title  { font-family: var(--display); font-size: 22px; font-weight: 800; color: white; letter-spacing: -.3px; }
+  .app-sub    { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .5px; }
 
-  /* ── Section header ───────────────────────── */
   .sec-hdr {
     font-family: var(--display); font-size: 11px; font-weight: 700;
     color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
@@ -60,136 +48,70 @@ st.markdown("""
     border-bottom: 1px solid var(--border);
   }
 
-  /* ── Instrument card ──────────────────────── */
   .inst-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: .6rem .85rem .55rem;
-    margin-bottom: .45rem;
-    position: relative;
-    overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: .6rem .85rem .55rem;
+    margin-bottom: .45rem; position: relative; overflow: hidden;
   }
   .inst-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--ce), var(--pe));
   }
-  .inst-name {
-    font-family: var(--display); font-size: 16px; font-weight: 800;
-    color: white; letter-spacing: .4px; line-height: 1;
-  }
-  .inst-meta {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--muted); margin-top: 3px; letter-spacing: .3px;
-  }
-  .inst-spot {
-    font-family: var(--mono); font-size: 18px; font-weight: 600;
-    color: white; letter-spacing: -.5px;
-  }
-  .inst-atm {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--gold); margin-top: 1px;
-  }
+  .inst-name { font-family: var(--display); font-size: 16px; font-weight: 800; color: white; letter-spacing: .4px; line-height: 1; }
+  .inst-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: .3px; }
+  .inst-spot { font-family: var(--mono); font-size: 18px; font-weight: 600; color: white; letter-spacing: -.5px; }
+  .inst-atm  { font-family: var(--mono); font-size: 11px; color: var(--gold); margin-top: 1px; }
 
-  /* ── PCR badge ────────────────────────────── */
-  .pcr-wrap {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--surface); border: 1px solid var(--border2);
-    border-radius: 6px; padding: 3px 9px 3px 7px;
-    margin-top: 5px;
-  }
-  .pcr-label {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
-  }
-  .pcr-val { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .pcr-wrap  { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; margin-top: 5px; }
+  .pcr-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .pcr-val   { font-family: var(--mono); font-size: 13px; font-weight: 600; }
   .pcr-bull-c { color: var(--bull); }
   .pcr-bear-c { color: var(--bear); }
   .pcr-neut-c { color: var(--gold); }
-  .pcr-tag {
-    font-family: var(--mono); font-size: 9px; font-weight: 600;
-    padding: 1px 5px; border-radius: 3px; letter-spacing: .5px;
-    text-transform: uppercase;
-  }
+  .pcr-tag    { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
   .pcr-tag-bull { background: var(--bull-dim); color: var(--bull); }
   .pcr-tag-bear { background: var(--bear-dim); color: var(--bear); }
   .pcr-tag-neut { background: var(--gold-dim); color: var(--gold); }
 
-  /* ── Options table ────────────────────────── */
-  .opt-table {
-    width: 100%; border-collapse: collapse;
-    font-family: var(--mono); font-size: 11px;
-    margin-bottom: .5rem;
-  }
-  .opt-table thead th {
-    background: transparent; color: var(--muted);
-    font-size: 9px; font-weight: 600; letter-spacing: 1.5px;
-    text-transform: uppercase; padding: 4px 6px;
-    border-bottom: 1px solid var(--border);
-    text-align: left;
-  }
+  .opt-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; margin-bottom: .5rem; }
+  .opt-table thead th { background: transparent; color: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; }
   .opt-table thead th:last-child { text-align: right; }
-  .opt-table td {
-    padding: 3px 6px; border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
+  .opt-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .opt-table td:last-child { text-align: right; }
 
-  /* row types */
   .r-ce    { color: var(--ce); }
   .r-pe    { color: var(--pe); }
   .r-ce-bg { background: var(--ce-dim); }
   .r-pe-bg { background: var(--pe-dim); }
   .r-sum   { background: #0a1a10; }
-  .r-sum td { color: #4caf50 !important; font-weight: 600; font-size: 11px; }
+  .r-sum td  { color: #4caf50 !important; font-weight: 600; font-size: 11px; }
   .r-sqrt  { background: #150b00; }
   .r-sqrt td { color: var(--gold) !important; font-weight: 600; font-size: 11px; }
-  .r-bias  { border-radius: 0 0 6px 6px; }
   .r-bias td { font-weight: 700; font-size: 11px; padding: 4px 6px; }
   .r-bias-bull { background: var(--bull-dim); }
   .r-bias-bull td { color: var(--bull) !important; }
   .r-bias-bear { background: var(--bear-dim); }
   .r-bias-bear td { color: var(--bear) !important; }
 
-  /* ── Trend row ────────────────────────────── */
-  .r-trend { border-radius: 0 0 8px 8px; margin-top: 1px; }
-  .r-trend td { font-weight: 700; font-size: 12px; padding: 5px 6px; letter-spacing: .3px; }
-  .r-trend-bull { background: #002a10; border-top: 1px solid var(--bull); }
+  /* ── Trend row ── */
+  .r-trend td { font-weight: 800; font-size: 12px; padding: 6px 8px; letter-spacing: .4px; border-radius: 0 0 8px 8px; }
+  .r-trend-bull { background: #002a10; border-top: 2px solid var(--bull); }
   .r-trend-bull td { color: var(--bull) !important; }
-  .r-trend-bear { background: #1e0404; border-top: 1px solid var(--bear); }
+  .r-trend-bear { background: #1e0404; border-top: 2px solid var(--bear); }
   .r-trend-bear td { color: var(--bear) !important; }
-  .r-trend-neut { background: #1a1400; border-top: 1px solid var(--gold); }
+  .r-trend-neut { background: #1a1400; border-top: 2px solid var(--gold); }
   .r-trend-neut td { color: var(--gold) !important; }
+  .r-trend-conf { background: #1a1a00; border-top: 2px solid #FFD700; }
+  .r-trend-conf td { color: #FFD700 !important; }
 
-  .tag-ce {
-    display: inline-block;
-    background: #102040; color: var(--ce);
-    font-size: 9px; font-weight: 600; padding: 1px 5px;
-    border-radius: 3px; letter-spacing: .5px;
-    border: 1px solid #1a3060;
-  }
-  .tag-pe {
-    display: inline-block;
-    background: #1e0a28; color: var(--pe);
-    font-size: 9px; font-weight: 600; padding: 1px 5px;
-    border-radius: 3px; letter-spacing: .5px;
-    border: 1px solid #3a1a50;
-  }
+  .tag-ce { display: inline-block; background: #102040; color: var(--ce); font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; border: 1px solid #1a3060; }
+  .tag-pe { display: inline-block; background: #1e0a28; color: var(--pe); font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; border: 1px solid #3a1a50; }
   .strike-num { color: var(--text); font-weight: 500; }
   .price-num  { font-weight: 600; }
 
-  /* ── RRS / Analysis table ─────────────────── */
-  .rrs-table {
-    width: 100%; border-collapse: collapse;
-    font-family: var(--mono); font-size: 11px;
-    margin-bottom: .5rem;
-  }
-  .rrs-table td {
-    padding: 4px 7px; border-bottom: 1px solid var(--border);
-    white-space: nowrap; vertical-align: middle;
-  }
-  .rrs-table .lbl { color: var(--muted); font-size: 10px; width: 38%; }
+  .rrs-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; margin-bottom: .5rem; }
+  .rrs-table td { padding: 4px 7px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
+  .rrs-table .lbl   { color: var(--muted); font-size: 10px; width: 38%; }
   .rrs-table .v-ce  { color: #00BFFF; font-weight: 600; }
   .rrs-table .v-pe  { color: #FF69B4; font-weight: 600; }
   .rrs-table .v-y   { color: #FFD700; font-weight: 600; }
@@ -199,68 +121,44 @@ st.markdown("""
   .rrs-table .v-w   { color: white;   font-weight: 600; }
   .rrs-table .v-gray{ color: #666;    font-weight: 400; }
   .rrs-table .v-aq  { color: #00FFFF; font-weight: 600; }
-  .rrs-table .v-fu  { color: #FF00FF; font-weight: 600; }
-  .rrs-table .sec-hdr-row td {
-    background: #1a1a1a; color: #666;
-    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
-    padding: 5px 7px;
-  }
+  .rrs-table .sec-hdr-row td { background: #1a1a1a; color: #666; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 7px; }
   .rrs-table .signal-bull td { background: #003318; color: #00e676 !important; font-weight: 700; }
   .rrs-table .signal-bear td { background: #2a0808; color: #ff5252 !important; font-weight: 700; }
   .rrs-table .signal-neut td { background: #1a1500; color: #FFA500 !important; font-weight: 700; }
   .rrs-table .signal-conf td { background: #1a1a00; color: #FFD700 !important; font-weight: 700; }
-  .spcl-val {
-    font-size: 20px !important; font-weight: 800 !important;
-    color: #FFA500 !important; letter-spacing: -1px;
-  }
+  .spcl-val { font-size: 20px !important; font-weight: 800 !important; color: #FFA500 !important; letter-spacing: -1px; }
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
   .btst-neut { color: #FFA500 !important; font-weight: 700; }
 
-  /* ── Error / misc ─────────────────────────── */
-  .err-box {
-    background: #1a0808; border: 1px solid #5a1a1a;
-    border-radius: 8px; padding: .6rem .9rem;
-    color: #fc8181; font-family: var(--mono); font-size: 12px;
-    margin-bottom: .5rem;
-  }
-  .login-box {
-    background: var(--surface); border: 1px solid var(--border2);
-    border-radius: 14px; padding: 2.5rem 2rem;
-    text-align: center; max-width: 460px; margin: 3rem auto;
-  }
-  .setup-box {
-    background: #0d1a10; border: 1px solid #1a4020;
-    border-radius: 10px; padding: 1rem 1.25rem;
-    color: #a5d6a7; font-family: var(--mono); font-size: 12px;
-    line-height: 2;
-  }
-  .refresh-note {
-    font-family: var(--mono); font-size: 10px;
-    color: var(--muted); text-align: right; margin-top: 8px;
-  }
-  code {
-    background: #1a2030; padding: 2px 6px;
-    border-radius: 4px; font-size: 12px;
-    color: #90caf9; font-family: var(--mono);
-  }
+  .err-box   { background: #1a0808; border: 1px solid #5a1a1a; border-radius: 8px; padding: .6rem .9rem; color: #fc8181; font-family: var(--mono); font-size: 12px; margin-bottom: .5rem; }
+  .login-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; padding: 2.5rem 2rem; text-align: center; max-width: 460px; margin: 3rem auto; }
+  .setup-box { background: #0d1a10; border: 1px solid #1a4020; border-radius: 10px; padding: 1rem 1.25rem; color: #a5d6a7; font-family: var(--mono); font-size: 12px; line-height: 2; }
+  .refresh-note { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: right; margin-top: 8px; }
+  code { background: #1a2030; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #90caf9; font-family: var(--mono); }
 
-  /* hide streamlit chrome */
   #MainMenu, footer, header { visibility: hidden; }
   .stSpinner > div { border-top-color: var(--ce) !important; }
-  div[data-testid="stSelectbox"] label {
-    font-family: var(--mono) !important; font-size: 11px !important;
-    color: var(--muted) !important;
-  }
+  div[data-testid="stSelectbox"] label { font-family: var(--mono) !important; font-size: 11px !important; color: var(--muted) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# CONSTANTS
+# CONSTANTS  (mirrors Pine default inputs)
 # ─────────────────────────────────────────────
 IST = pytz.timezone("Asia/Kolkata")
 
 STRIKE_STEP_FIXED = {"NIFTY": 50, "BANKNIFTY": 100}
+
+# Pine parameter defaults
+TREND_EMA_LEN       = 5     # trendEmaLen
+TREND_CONF_BARS     = 3     # trendConfBars
+REV_CONF_BARS       = 2     # revConfBars
+STRONG_MOVE_COEFF   = 1.2   # strongMoveCoeff  ← corrected from 0.8
+DOM_CONF_BARS       = 2     # domConfBars
+PRE_GAMMA_MIN_SCORE = 3     # preGammaMinScore
+PRE_GAMMA_VOL_BARS  = 2     # preGammaVolBars
+DOMINANCE_THRESHOLD = 0.04  # threshold
 
 def infer_strike_step(data):
     from collections import Counter
@@ -280,18 +178,15 @@ INSTRUMENT_KEY = {
 }
 
 DISPLAY_NAME = {
-    "NIFTY":     "NIFTY",
-    "BANKNIFTY": "BANKNIFTY",
-    "HDFCBANK":  "HDFC Bank",
-    "ICICIBANK": "ICICI Bank",
-    "SBIN":      "SBI",
-    "RELIANCE":  "Reliance",
+    "NIFTY": "NIFTY", "BANKNIFTY": "BANKNIFTY",
+    "HDFCBANK": "HDFC Bank", "ICICIBANK": "ICICI Bank",
+    "SBIN": "SBI", "RELIANCE": "Reliance",
 }
 
 SYMBOL_GROUPS = [
-    ("📈 Index Options",     ["NIFTY",    "BANKNIFTY"]),
-    ("🏦 Bank Stocks",       ["HDFCBANK", "ICICIBANK"]),
-    ("🏢 Large Cap Stocks",  ["SBIN",     "RELIANCE"]),
+    ("📈 Index Options",    ["NIFTY",    "BANKNIFTY"]),
+    ("🏦 Bank Stocks",      ["HDFCBANK", "ICICIBANK"]),
+    ("🏢 Large Cap Stocks", ["SBIN",     "RELIANCE"]),
 ]
 
 UPSTOX_OC_URLS      = ["https://api.upstox.com/v2/option/chain", "https://api.upstox.com/v3/option/chain"]
@@ -299,6 +194,15 @@ UPSTOX_CONTRACT_URL = "https://api.upstox.com/v2/option/contract"
 UPSTOX_AUTH_URL     = "https://api.upstox.com/v2/login/authorization/dialog"
 UPSTOX_TOKEN_URL    = "https://api.upstox.com/v2/login/authorization/token"
 UPSTOX_MARKET_QUOTE = "https://api.upstox.com/v2/market-quote/quotes"
+
+# ─────────────────────────────────────────────
+# EMA HELPER  (mirrors Pine ta.ema — single step)
+# ─────────────────────────────────────────────
+def ema_update(prev_ema, new_val, period):
+    if prev_ema is None:
+        return float(new_val)
+    alpha = 2.0 / (period + 1)
+    return alpha * float(new_val) + (1.0 - alpha) * float(prev_ema)
 
 # ─────────────────────────────────────────────
 # HELPERS
@@ -334,72 +238,49 @@ def exchange_code(api_key, api_secret, redirect_uri, code):
 # FETCH VIX
 # ─────────────────────────────────────────────
 def fetch_vix(token):
-    cache_key = "vix_data"
-    time_key  = "vix_time"
+    cache_key = "vix_data"; time_key = "vix_time"
     now = time.time()
-    if (cache_key in st.session_state
-            and time_key in st.session_state
+    if (cache_key in st.session_state and time_key in st.session_state
             and now - st.session_state[time_key] < 60):
         return st.session_state[cache_key]
-
     try:
-        r = requests.get(
-            UPSTOX_MARKET_QUOTE,
-            params={"symbol": "NSE_INDEX|India VIX"},
-            headers=upstox_headers(token),
-            timeout=10
-        )
+        r = requests.get(UPSTOX_MARKET_QUOTE,
+                         params={"symbol": "NSE_INDEX|India VIX"},
+                         headers=upstox_headers(token), timeout=10)
         d = r.json()
         if d.get("status") == "success":
-            data = d.get("data", {})
-            for key in data:
-                q = data[key]
-                ltp = q.get("last_price") or q.get("ltp") or 0
-                day_open = (q.get("ohlc") or {}).get("open") or ltp
+            for key in d.get("data", {}):
+                q    = d["data"][key]
+                ltp  = q.get("last_price") or q.get("ltp") or 0
+                dopen = (q.get("ohlc") or {}).get("open") or ltp
                 if ltp:
-                    result = {"ltp": float(ltp), "day_open": float(day_open)}
-                    st.session_state[cache_key] = result
+                    res = {"ltp": float(ltp), "day_open": float(dopen)}
+                    st.session_state[cache_key] = res
                     st.session_state[time_key]  = now
-                    return result
+                    return res
     except Exception:
         pass
-
-    try:
-        r = requests.get(
-            UPSTOX_MARKET_QUOTE,
-            params={"symbol": "NSE_INDEX|Nifty 50"},
-            headers=upstox_headers(token),
-            timeout=10
-        )
-    except Exception:
-        pass
-
-    cached = st.session_state.get(cache_key)
-    return cached
+    return st.session_state.get(cache_key)
 
 # ─────────────────────────────────────────────
-# FETCH OTM OPTION LTPs for RRS engine
+# FETCH OTM LTPs
 # ─────────────────────────────────────────────
 def fetch_otm_ltps(token, symbol, expiry, atm, step, chain_data):
-    ce_map = {}
-    pe_map = {}
+    ce_map = {}; pe_map = {}
     for row in chain_data:
-        strike = float(row.get("strike_price", 0))
+        strike  = float(row.get("strike_price", 0))
         call_md = (row.get("call_options") or {}).get("market_data") or {}
         pe_md   = (row.get("put_options")  or {}).get("market_data") or {}
         ce_map[strike] = float(call_md.get("ltp") or 0)
         pe_map[strike] = float(pe_md.get("ltp")   or 0)
-
-    result = {}
-    result["ce_atm"] = ce_map.get(float(atm), 0.0)
-    result["pe_atm"] = pe_map.get(float(atm), 0.0)
+    res = {"ce_atm": ce_map.get(float(atm), 0.0), "pe_atm": pe_map.get(float(atm), 0.0)}
     for i in range(1, 5):
-        result[f"ce_{i}"] = ce_map.get(float(atm + i * step), 0.0)
-        result[f"pe_{i}"] = pe_map.get(float(atm - i * step), 0.0)
-    return result
+        res[f"ce_{i}"] = ce_map.get(float(atm + i * step), 0.0)
+        res[f"pe_{i}"] = pe_map.get(float(atm - i * step), 0.0)
+    return res
 
 # ─────────────────────────────────────────────
-# FETCH
+# FETCH chain / expiries
 # ─────────────────────────────────────────────
 def fetch_expiry_dates(token, symbol):
     try:
@@ -413,8 +294,7 @@ def fetch_expiry_dates(token, symbol):
             raw = d["data"]
             if raw and isinstance(raw[0], dict):
                 dates = [str(item.get("expiry") or item.get("expiry_date") or
-                             item.get("date") or item.get("expiryDate") or "")
-                         for item in raw]
+                             item.get("date") or item.get("expiryDate") or "") for item in raw]
                 dates = [x for x in dates if x]
             else:
                 dates = [str(x) for x in raw]
@@ -425,19 +305,16 @@ def fetch_expiry_dates(token, symbol):
         return None, str(e)
 
 def fetch_chain(token, symbol, expiry_date):
-    cache_key = f"oc_{symbol}_{expiry_date}"
-    time_key  = f"oc_time_{symbol}_{expiry_date}"
+    cache_key = f"oc_{symbol}_{expiry_date}"; time_key = f"oc_time_{symbol}_{expiry_date}"
     now = time.time()
-    if (cache_key in st.session_state
-            and time_key in st.session_state
+    if (cache_key in st.session_state and time_key in st.session_state
             and now - st.session_state[time_key] < 180):
         return st.session_state[cache_key], None, "cached"
-
     last_err = "No response"; last_raw = {}
     for url in UPSTOX_OC_URLS:
         try:
-            r = requests.get(url, params={"instrument_key": INSTRUMENT_KEY[symbol],
-                                          "expiry_date": expiry_date},
+            r = requests.get(url,
+                             params={"instrument_key": INSTRUMENT_KEY[symbol], "expiry_date": expiry_date},
                              headers=upstox_headers(token), timeout=15)
             last_raw = r.json()
             if r.status_code == 401:
@@ -457,38 +334,32 @@ def fetch_chain(token, symbol, expiry_date):
     return None, last_err, UPSTOX_OC_URLS[-1]
 
 # ─────────────────────────────────────────────
-# PARSE & COMPUTE
+# PARSE
 # ─────────────────────────────────────────────
 def snap(price, step):
     return int(round(price / step) * step)
 
 def parse(data, symbol):
-    step   = STRIKE_STEP_FIXED.get(symbol) or infer_strike_step(data)
+    step = STRIKE_STEP_FIXED.get(symbol) or infer_strike_step(data)
     ce_map = {}; pe_map = {}; ce_oi = {}; pe_oi = {}; spot = None
-
     for row in data:
         strike = float(row.get("strike_price", 0))
         if spot is None:
             sp = row.get("underlying_spot_price")
             if sp: spot = float(sp)
-
         call_md = (row.get("call_options") or {}).get("market_data") or {}
         ce_map[strike] = float(call_md.get("ltp") or 0)
         ce_oi[strike]  = float(call_md.get("oi")  or 0)
-
         put_md  = (row.get("put_options") or {}).get("market_data") or {}
         pe_map[strike] = float(put_md.get("ltp") or 0)
         pe_oi[strike]  = float(put_md.get("oi")  or 0)
-
     if spot is None:
         common = set(ce_map) & set(pe_map)
         if common:
             spot = float(min(common, key=lambda s: abs(ce_map[s] - pe_map[s])))
     if spot is None:
         raise ValueError("Could not determine underlying spot price")
-
     atm = snap(spot, step)
-
     ce_rows = [
         {"label": "ATM",   "strike": atm,            "price": ce_map.get(float(atm),            0.0)},
         {"label": "ATM+1", "strike": atm + step,     "price": ce_map.get(float(atm + step),     0.0)},
@@ -499,64 +370,56 @@ def parse(data, symbol):
         {"label": "ATM-1", "strike": atm - step,     "price": pe_map.get(float(atm - step),     0.0)},
         {"label": "ATM-2", "strike": atm - 2 * step, "price": pe_map.get(float(atm - 2 * step), 0.0)},
     ]
-
     ce_sum  = sum(r["price"] for r in ce_rows)
     pe_sum  = sum(r["price"] for r in pe_rows)
     ce_sqrt = math.sqrt(ce_sum) if ce_sum > 0 else 0.0
     pe_sqrt = math.sqrt(pe_sum) if pe_sum > 0 else 0.0
-
     ce_pcr_strikes = [atm + (i * step) for i in range(-10, 11)]
     pe_pcr_strikes = [atm - (i * step) for i in range(-10, 11)]
-    total_ce_oi  = sum(ce_oi.get(float(s), 0.0) for s in ce_pcr_strikes)
-    total_pe_oi  = sum(pe_oi.get(float(s), 0.0) for s in pe_pcr_strikes)
+    total_ce_oi = sum(ce_oi.get(float(s), 0.0) for s in ce_pcr_strikes)
+    total_pe_oi = sum(pe_oi.get(float(s), 0.0) for s in pe_pcr_strikes)
     pcr = (total_pe_oi / total_ce_oi) if total_ce_oi > 0 else 0.0
-
     return dict(spot=spot, atm=atm, step=step,
                 ce_map=ce_map, pe_map=pe_map,
                 ce_rows=ce_rows, pe_rows=pe_rows,
-                ce_sum=ce_sum,   pe_sum=pe_sum,
+                ce_sum=ce_sum, pe_sum=pe_sum,
                 ce_sqrt=ce_sqrt, pe_sqrt=pe_sqrt,
                 bearish=ce_sqrt > pe_sqrt,
-                pcr=pcr,
-                total_pe_oi=total_pe_oi,
-                total_ce_oi=total_ce_oi)
+                pcr=pcr, total_pe_oi=total_pe_oi, total_ce_oi=total_ce_oi)
 
 # ─────────────────────────────────────────────
-# RRS / ANALYSIS ENGINE
+# TRADING DAYS
 # ─────────────────────────────────────────────
 def calc_trading_days_to_expiry(expiry_str):
     try:
-        now_ist   = datetime.now(IST).date()
-        exp_parts = expiry_str.split("-")
-        if len(exp_parts) == 3:
-            exp_date = datetime(int(exp_parts[0]), int(exp_parts[1]), int(exp_parts[2])).date()
+        now_ist = datetime.now(IST).date()
+        p = expiry_str.split("-")
+        if len(p) == 3:
+            exp_date = datetime(int(p[0]), int(p[1]), int(p[2])).date()
         else:
             return 1
-        diff_days   = max((exp_date - now_ist).days, 0)
+        diff_days    = max((exp_date - now_ist).days, 0)
         trading_days = max(round(diff_days * 5 / 7) + 1, 1)
         return trading_days
     except Exception:
         return 1
 
-def get_strike_step_ps(symbol):
-    sym = symbol.upper()
-    if "BANKNIFTY" in sym:   return 100
-    if "FINNIFTY"  in sym:   return 50
-    if "MIDCPNIFTY" in sym:  return 25
-    return STRIKE_STEP_FIXED.get(symbol, 50)
-
+# ─────────────────────────────────────────────
+# COMPUTE RRS  —  Pine-faithful port
+# ─────────────────────────────────────────────
 def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state, symbol):
-    spot    = result["spot"]
-    atm     = result["atm"]
-    step    = result["step"]
-    ce_atm  = otm_ltps["ce_atm"]
-    pe_atm  = otm_ltps["pe_atm"]
+    spot   = result["spot"]
+    atm    = result["atm"]
+    step   = result["step"]
+    ce_atm = otm_ltps["ce_atm"]
+    pe_atm = otm_ltps["pe_atm"]
 
     ce1 = otm_ltps["ce_1"]; ce2 = otm_ltps["ce_2"]
     ce3 = otm_ltps["ce_3"]; ce4 = otm_ltps["ce_4"]
     pe1 = otm_ltps["pe_1"]; pe2 = otm_ltps["pe_2"]
     pe3 = otm_ltps["pe_3"]; pe4 = otm_ltps["pe_4"]
 
+    # ── Day-open anchors ────────────────────────────────────────────────
     ce1_open = prev_state.get("ce1_open") or ce1 or 0.001
     ce2_open = prev_state.get("ce2_open") or ce2 or 0.001
     ce3_open = prev_state.get("ce3_open") or ce3 or 0.001
@@ -566,96 +429,184 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
     pe3_open = prev_state.get("pe3_open") or pe3 or 0.001
     pe4_open = prev_state.get("pe4_open") or pe4 or 0.001
 
-    def erosion(now_val, open_val):
-        if open_val and open_val != 0:
-            return (open_val - now_val) / open_val
-        return 0.0
+    # ── Per-strike erosion  (open - now) / open ─────────────────────────
+    def ero(now_val, open_val):
+        return (open_val - now_val) / open_val if open_val else 0.0
 
-    ce1e = erosion(ce1, ce1_open); ce2e = erosion(ce2, ce2_open)
-    ce3e = erosion(ce3, ce3_open); ce4e = erosion(ce4, ce4_open)
-    pe1e = erosion(pe1, pe1_open); pe2e = erosion(pe2, pe2_open)
-    pe3e = erosion(pe3, pe3_open); pe4e = erosion(pe4, pe4_open)
+    ce1e = ero(ce1, ce1_open); ce2e = ero(ce2, ce2_open)
+    ce3e = ero(ce3, ce3_open); ce4e = ero(ce4, ce4_open)
+    pe1e = ero(pe1, pe1_open); pe2e = ero(pe2, pe2_open)
+    pe3e = ero(pe3, pe3_open); pe4e = ero(pe4, pe4_open)
 
     call_erosion = (ce1e + ce2e + ce3e + ce4e) / 4
     put_erosion  = (pe1e + pe2e + pe3e + pe4e) / 4
-    dominance    = put_erosion - call_erosion
+    dominance    = put_erosion - call_erosion        # Pine: dominance
 
-    prev_ce1 = prev_state.get("prev_call_ero1", call_erosion)
-    prev_ce2 = prev_state.get("prev_call_ero2", call_erosion)
-    prev_pe1 = prev_state.get("prev_put_ero1", put_erosion)
-    prev_pe2 = prev_state.get("prev_put_ero2", put_erosion)
+    # ── EMA of erosion — Pine ta.ema(callErosion, trendEmaLen=5) ──────────
+    call_ema = ema_update(prev_state.get("call_ema"), call_erosion, TREND_EMA_LEN)
+    put_ema  = ema_update(prev_state.get("put_ema"),  put_erosion,  TREND_EMA_LEN)
+    momentum_diff = put_ema - call_ema               # Pine: momentumDiff (EMA-based)
 
-    call_avg3 = (call_erosion + prev_ce1 + prev_ce2) / 3
-    put_avg3  = (put_erosion  + prev_pe1 + prev_pe2) / 3
-    momentum_diff = put_avg3 - call_avg3
-    abs_diff      = abs(momentum_diff)
+    # ── Fast(3) / slow(8) EMA for pre-gamma ema-divergence ───────────────
+    call_ema_fast = ema_update(prev_state.get("call_ema_fast"), call_erosion, 3)
+    put_ema_fast  = ema_update(prev_state.get("put_ema_fast"),  put_erosion,  3)
+    call_ema_slow = ema_update(prev_state.get("call_ema_slow"), call_erosion, 8)
+    put_ema_slow  = ema_update(prev_state.get("put_ema_slow"),  put_erosion,  8)
+    fast_mom = put_ema_fast - call_ema_fast
+    slow_mom = put_ema_slow - call_ema_slow
 
+    # ── Volatility — Pine ta.stdev(dominance, 20) ─────────────────────────
     dom_history = list(prev_state.get("dom_history", []))
     dom_history.append(dominance)
     if len(dom_history) > 20:
         dom_history = dom_history[-20:]
+    dom_mean = sum(dom_history) / len(dom_history)
+    dom_var  = (sum((v - dom_mean) ** 2 for v in dom_history) / len(dom_history)
+                if len(dom_history) > 1 else 0.0)
+    volatility = max(math.sqrt(dom_var) if dom_var > 0 else DOMINANCE_THRESHOLD,
+                     DOMINANCE_THRESHOLD)
 
-    dom_mean = sum(dom_history) / len(dom_history) if dom_history else 0.0
-    dom_var  = sum((v - dom_mean) ** 2 for v in dom_history) / len(dom_history) if len(dom_history) > 1 else 0.0
-    threshold_rrs = 0.04
-    volatility = max(math.sqrt(dom_var) if dom_var > 0 else threshold_rrs, threshold_rrs)
+    # ── dom_avg — Pine ta.ema(domAbs, 20); used in writer + pre-gamma ─────
+    dom_abs = abs(dominance)
+    dom_avg = ema_update(prev_state.get("dom_avg"), dom_abs, 20)
+    dom_avg = max(dom_avg, DOMINANCE_THRESHOLD) if dom_avg else DOMINANCE_THRESHOLD
 
-    strong_move = abs_diff > volatility * 0.8
+    # ── Strong move — Pine strongMoveCoeff default = 1.2 ─────────────────
+    strong_move = abs(momentum_diff) > volatility * STRONG_MOVE_COEFF
 
+    # ── Prev persisted values ─────────────────────────────────────────────
     prev_dom1 = prev_state.get("prev_dom1", dominance)
+    prev_dom2 = prev_state.get("prev_dom2", dominance)
     prev_vol1 = prev_state.get("prev_vol1", volatility)
     prev_vol2 = prev_state.get("prev_vol2", volatility)
 
-    prev_momentum = prev_state.get("prev_put_ero1", put_erosion) - prev_state.get("prev_call_ero1", call_erosion)
-    early_reversal = (momentum_diff > 0 and prev_momentum < 0) or (momentum_diff < 0 and prev_momentum > 0)
+    dominance_accel = dominance - prev_dom1          # Pine: dominanceAccel
+    dom_velocity2   = prev_dom1 - prev_dom2          # Pine: domVelocity2
 
-    sideways = (abs(momentum_diff) < volatility * 0.3 and abs(dominance) < threshold_rrs * 0.5)
+    # ── Confirmed trend with dominance-confluence gate ────────────────────
+    # Pine: consecutive bullCount / bearCount of EMA momentum
+    bull_count = prev_state.get("bull_count", 0)
+    bear_count = prev_state.get("bear_count", 0)
+    if   momentum_diff > 0: bull_count += 1; bear_count  = 0
+    elif momentum_diff < 0: bear_count += 1; bull_count  = 0
+    else:                   bull_count  = 0; bear_count  = 0
 
-    dominance_accel = dominance - prev_dom1
-    prev_sideways = prev_state.get("prev_sideways", False)
-    compression_break = (prev_sideways and abs(dominance_accel) > threshold_rrs * 0.5 and strong_move)
+    # Pine: domRisingCount / domFallingCount  (dominance confluence)
+    dom_rising_count  = prev_state.get("dom_rising_count",  0)
+    dom_falling_count = prev_state.get("dom_falling_count", 0)
+    if   dominance > prev_dom1: dom_rising_count  += 1; dom_falling_count  = 0
+    elif dominance < prev_dom1: dom_falling_count += 1; dom_rising_count   = 0
+    else:                       dom_rising_count   = 0; dom_falling_count  = 0
 
-    gamma_build = (abs(dominance) > threshold_rrs and
-                   volatility > prev_vol1 and
-                   momentum_diff * dominance > 0)
+    dom_conf_up   = dom_rising_count  >= DOM_CONF_BARS
+    dom_conf_down = dom_falling_count >= DOM_CONF_BARS
+
+    dom_pending_bull = bull_count >= TREND_CONF_BARS and not dom_conf_up
+    dom_pending_bear = bear_count >= TREND_CONF_BARS and not dom_conf_down
+
+    # Carry forward confirmed_trend while pending — don't reset mid-signal
+    confirmed_trend = prev_state.get("confirmed_trend", "neutral")
+    prev_trend_sign = prev_state.get("prev_trend_sign", 0.0)
+    if   bull_count >= TREND_CONF_BARS and dom_conf_up:
+        confirmed_trend = "bull"; prev_trend_sign = 1.0
+    elif bear_count >= TREND_CONF_BARS and dom_conf_down:
+        confirmed_trend = "bear"; prev_trend_sign = -1.0
+    # if pending → hold previous confirmed_trend
+
+    # ── Early reversal ────────────────────────────────────────────────────
+    rev_count = prev_state.get("rev_count", 0)
+    cur_sign  = 1.0 if momentum_diff > 0 else (-1.0 if momentum_diff < 0 else 0.0)
+    if prev_trend_sign != 0 and cur_sign != 0 and cur_sign != prev_trend_sign:
+        rev_count += 1
+    elif cur_sign == prev_trend_sign:
+        rev_count = 0
+    early_reversal = rev_count >= REV_CONF_BARS
+
+    # ── Sideways — uses dom_avg not fixed threshold ───────────────────────
+    sideways = (abs(momentum_diff) < volatility * 0.3 and
+                dom_abs < dom_avg * 0.4 and
+                bull_count < TREND_CONF_BARS and
+                bear_count < TREND_CONF_BARS)
+
+    prev_sideways     = prev_state.get("prev_sideways", False)
+    compression_break = prev_sideways and abs(dominance_accel) > dom_avg * 0.3 and strong_move
+
+    # ── Core trend (with pending arrows) ─────────────────────────────────
+    if dom_pending_bull:
+        core_trend = "⬆⏳ PENDING BULL"
+    elif dom_pending_bear:
+        core_trend = "⬇⏳ PENDING BEAR"
+    elif sideways:
+        core_trend = "💥 BREAK OUT" if compression_break else "➖⚖️ SIDEWAYS"
+    elif confirmed_trend == "bull":
+        if strong_move:
+            core_trend = "⬆⬆ OTM BULL+🔥⚡" if early_reversal else "⬆⬆ OTM BULL🔥"
+        else:
+            core_trend = "⬆ OTM BULL⚡" if early_reversal else "⬆ OTM BULL"
+    elif confirmed_trend == "bear":
+        if strong_move:
+            core_trend = "⬇⬇ OTM BEAR+🔥⚡" if early_reversal else "⬇⬇ OTM BEAR🔥"
+        else:
+            core_trend = "⬇ OTM BEAR⚡" if early_reversal else "⬇ OTM BEAR"
+    else:
+        core_trend = "➖ NEUTRAL"
+
+    # ── Gamma build / explode — Pine-faithful ────────────────────────────
+    gamma_build = (volatility > prev_vol1 and
+                   momentum_diff * dominance > 0 and
+                   dominance_accel * dominance > 0 and
+                   abs(dominance_accel) > abs(dom_velocity2) * 0.5)
     gamma_explode = gamma_build and strong_move and volatility > prev_vol2
-    if gamma_explode:
+    # Pine gates gammaSignal on confirmedTrend alignment
+    if (gamma_explode and
+            ((dominance > 0 and confirmed_trend == "bull") or
+             (dominance < 0 and confirmed_trend == "bear"))):
         gamma_signal = "🟢 GAMMA↑" if dominance > 0 else "🔴 GAMMA↓"
     else:
         gamma_signal = ""
 
+    # ── Writer capitulation — CORRECTED Pine logic ────────────────────────
+    #
+    # Pine: writerCapitulation = strongMove
+    #         and dominanceAccel * dominance < 0     ← accel OPPOSITE to current dominance
+    #         and abs(dominanceAccel) > domAvg * 0.5 ← magnitude check vs rolling avg
+    #
+    # Big FALL scenario:
+    #   calls go deep OTM → call prices EXPAND → call erosion NEGATIVE
+    #   → dominance = put_ero - call_ero becomes very NEGATIVE (bear)
+    #   When call WRITERS start to COVER (buy back), call prices ease
+    #   → call erosion recovers → dominance_accel turns POSITIVE
+    #   → accel * dominance < 0  ← CALL WRITER capitulation fires ✓
+    #
     writer_cap = (strong_move and
-                  abs(dominance - prev_dom1) > threshold_rrs * 1.5 and
-                  momentum_diff * dominance < 0)
+                  dominance_accel * dominance < 0 and
+                  abs(dominance_accel) > dom_avg * 0.5)
     if writer_cap:
         writer_signal = "💣 PUT WRITER" if dominance > 0 else "💣 CALL WRITER"
     else:
         writer_signal = ""
 
-    prev_iv_peak = prev_state.get("prev_iv_peak", False)
+    # ── IV signals ────────────────────────────────────────────────────────
+    prev_iv_peak   = prev_state.get("prev_iv_peak", False)
     iv_peak        = volatility > prev_vol1 and prev_vol1 > prev_vol2
-    iv_compression = volatility < prev_vol1 and abs(momentum_diff) < threshold_rrs
-    iv_crush = prev_iv_peak and iv_compression
-    iv_signal = "📉 IV CRUSH" if iv_crush else ""
+    iv_compression = volatility < prev_vol1 and abs(momentum_diff) < dom_avg * 0.3
+    iv_crush       = prev_iv_peak and iv_compression
+    iv_signal      = "📉 IV CRUSH" if iv_crush else ""
 
-    exp_parts = expiry.split("-")
-    is_expiry_day = False
+    # ── Expiry signals ────────────────────────────────────────────────────
+    exp_parts = expiry.split("-"); is_expiry_day = False
     try:
         now_date = datetime.now(IST).date()
         exp_date = datetime(int(exp_parts[0]), int(exp_parts[1]), int(exp_parts[2])).date()
         is_expiry_day = now_date == exp_date
     except Exception:
         pass
-
     expiry_vol_spike = is_expiry_day and volatility > prev_vol1
-    expiry_trap      = is_expiry_day and abs(dominance) > threshold_rrs and momentum_diff * dominance < 0
-    if expiry_trap:
-        expiry_signal = "🧨 EXP TRAP"
-    elif expiry_vol_spike:
-        expiry_signal = "⚡ EXP VOL"
-    else:
-        expiry_signal = ""
+    expiry_trap      = is_expiry_day and dom_abs > dom_avg * 0.6 and momentum_diff * dominance < 0
+    expiry_signal    = ("🧨 EXP TRAP" if expiry_trap else
+                        "⚡ EXP VOL"  if expiry_vol_spike else "")
 
+    # ── Smart bias ────────────────────────────────────────────────────────
     score = sum([
         1.0 if gamma_build       else 0.0,
         1.0 if writer_cap        else 0.0,
@@ -665,198 +616,194 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         1.0 if compression_break else 0.0,
     ])
     smart_prob = round((score / 6.0) * 100)
-    if smart_prob > 70:
-        smart_bias = "🧠 SMART BULL" if dominance > 0 else "🧠 SMART BEAR"
+    if smart_prob > 70 and confirmed_trend != "neutral":
+        smart_bias = "🧠 SMART BULL" if confirmed_trend == "bull" else "🧠 SMART BEAR"
     elif smart_prob > 40:
         smart_bias = "🧠 BUILDING"
     else:
         smart_bias = ""
 
-    inst_signal = (gamma_signal or writer_signal or iv_signal or
-                   expiry_signal or smart_bias or "—")
+    # ── Pre-Gamma warning — new, mirrors Pine preGammaSignal ─────────────
+    vol_rising_count = prev_state.get("vol_rising_count", 0)
+    vol_rising_count = vol_rising_count + 1 if volatility > prev_vol1 else 0
+    vol_rising       = vol_rising_count >= PRE_GAMMA_VOL_BARS
 
-    if sideways:
-        otm_trend_arrow = "➖ SIDEWAYS"
-    elif momentum_diff > 0:
-        if strong_move:
-            otm_trend_arrow = "⬆⬆ OTM BULL+🔥⚡" if early_reversal else "⬆⬆ OTM BULL🔥"
-        else:
-            otm_trend_arrow = "⬆ OTM BULL⚡" if early_reversal else "⬆ OTM BULL"
-    elif momentum_diff < 0:
-        if strong_move:
-            otm_trend_arrow = "⬇⬇ OTM BEAR+🔥⚡" if early_reversal else "⬇⬇ OTM BEAR🔥"
-        else:
-            otm_trend_arrow = "⬇ OTM BEAR⚡" if early_reversal else "⬇ OTM BEAR"
-    else:
-        otm_trend_arrow = "◆ NEUTRAL"
+    dom_velocity_pg      = dominance - prev_dom1
+    prev_dom_velocity_pg = prev_state.get("prev_dom_velocity_pg", dom_velocity_pg)
+    dom_accel_pg         = dom_velocity_pg - prev_dom_velocity_pg
+    dom_build_up = (dom_velocity_pg != 0 and
+                    math.copysign(1, dom_velocity_pg) == math.copysign(1, dom_accel_pg) and
+                    abs(dom_velocity_pg) > abs(prev_dom_velocity_pg))
 
-    otm_trend_final = (gamma_signal or writer_signal or iv_signal or
-                       expiry_signal or smart_bias or otm_trend_arrow)
+    ce_expand_count = sum(1 for e in [ce1e, ce2e, ce3e, ce4e] if e < 0)
+    pe_expand_count = sum(1 for e in [pe1e, pe2e, pe3e, pe4e] if e < 0)
+    premium_expansion = (
+        (ce_expand_count >= 2 and pe_expand_count >= 2) or
+        (momentum_diff > 0 and pe_expand_count >= 2 and ce_expand_count < 2) or
+        (momentum_diff < 0 and ce_expand_count >= 2 and pe_expand_count < 2)
+    )
 
-    dist_from_atm = abs(spot - atm)
-    gamma_score   = 100.0 / (1.0 + (dist_from_atm / step))
+    approaching_threshold = dom_abs > dom_avg * 0.5 and dom_abs < dom_avg * 0.9
 
-    ce_iv_pct = max((ce_atm - max(spot - atm, 0)) / ce_atm * 100, 0) if ce_atm > 0 else 0.0
-    pe_iv_pct = max((pe_atm - max(atm - spot, 0)) / pe_atm * 100, 0) if pe_atm > 0 else 0.0
+    ema_divergence = (fast_mom != 0 and
+                      abs(fast_mom) > abs(slow_mom) and
+                      math.copysign(1, fast_mom) == math.copysign(1, slow_mom))
 
-    vix_current = (vix_info or {}).get("ltp") or 15.0
-    vix_ref     = 15.0
-    vix_boost   = vix_current / vix_ref
+    pre_gamma_score = sum([
+        1 if vol_rising            else 0,
+        1 if dom_build_up          else 0,
+        1 if premium_expansion     else 0,
+        1 if approaching_threshold else 0,
+        1 if ema_divergence        else 0,
+    ])
+    pre_gamma_dir    = "bull" if fast_mom > 0 else "bear"
+    pre_gamma_signal = ""
+    if pre_gamma_score >= PRE_GAMMA_MIN_SCORE and not gamma_explode and not sideways:
+        pre_gamma_signal = "⚡ PRE-GAMMA ↑" if pre_gamma_dir == "bull" else "⚡ PRE-GAMMA ↓"
 
-    buffer  = step * 0.25
-    ce_bias = 1.2 if spot > atm + buffer else (0.8 if spot < atm - buffer else 1.0)
-    pe_bias = 1.2 if spot < atm - buffer else (0.8 if spot > atm + buffer else 1.0)
+    # ── Final trend arrow — Pine priority chain ───────────────────────────
+    # expirySignal > gammaSignal > preGammaSignal > writerSignal > ivSignal > smartBias > coreTrend
+    trend_arrow = (expiry_signal    or
+                   gamma_signal     or
+                   pre_gamma_signal or
+                   writer_signal    or
+                   iv_signal        or
+                   smart_bias       or
+                   core_trend)
 
-    ce_spike_score = gamma_score * (1.0 + ce_iv_pct / 100.0) * vix_boost * ce_bias
-    pe_spike_score = gamma_score * (1.0 + pe_iv_pct / 100.0) * vix_boost * pe_bias
-    score_diff     = ce_spike_score - pe_spike_score
-
-    rss_bull = dominance >  threshold_rrs
-    rss_bear = dominance < -threshold_rrs
-
-    inst_bull = any(x in inst_signal for x in ["↑", "BULL", "PUT WRITER"])
-    inst_bear = any(x in inst_signal for x in ["↓", "BEAR", "CALL WRITER", "IV CRUSH"])
+    # ── Spike signal (4-OTM combined logic) ──────────────────────────────
+    thr       = DOMINANCE_THRESHOLD
+    rss_bull  = dominance >  thr
+    rss_bear  = dominance < -thr
+    inst_bull = any(x in trend_arrow for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑"])
+    inst_bear = any(x in trend_arrow for x in ["⬇", "BEAR", "CALL WRITER", "IV CRUSH", "GAMMA↓", "PRE-GAMMA ↓", "EXP TRAP"])
     otm_bull  = momentum_diff > 0
     otm_bear  = momentum_diff < 0
-    spikes_bull = score_diff >  10
-    spikes_bear = score_diff < -10
 
     strong_bull = rss_bull and otm_bull and inst_bull
     strong_bear = rss_bear and otm_bear and inst_bear
 
-    if strong_bull:
-        spike_signal = "⬆⬆ CE STRONG 🔥" if spikes_bull else "⬆ BULL CONFIRM 🔥"
-        sig_color = "bull"
-    elif strong_bear:
-        spike_signal = "⬇⬇ PE STRONG 🔥" if spikes_bear else "⬇ BEAR CONFIRM 🔥"
-        sig_color = "bear"
-    elif rss_bull and otm_bull:
-        spike_signal = "⬆⬆ RSS+OTM BULL" if strong_move else "⬆ RSS+OTM BULL"
-        sig_color = "bull"
-    elif rss_bear and otm_bear:
-        spike_signal = "⬇⬇ RSS+OTM BEAR" if strong_move else "⬇ RSS+OTM BEAR"
-        sig_color = "bear"
-    elif rss_bull and otm_bear:
-        spike_signal = "⚡ CONFLICT ↑RSS↓OTM"; sig_color = "conf"
-    elif rss_bear and otm_bull:
-        spike_signal = "⚡ CONFLICT ↓RSS↑OTM"; sig_color = "conf"
-    elif rss_bull and inst_bear:
-        spike_signal = "⚡ CONFLICT ↑↓"; sig_color = "conf"
-    elif rss_bear and inst_bull:
-        spike_signal = "⚡ CONFLICT ↓↑"; sig_color = "conf"
-    elif rss_bull:
-        spike_signal = "⬆⬆ RSS BULL+" if spikes_bull else "⬆ RSS BULL"; sig_color = "bull"
-    elif rss_bear:
-        spike_signal = "⬇⬇ RSS BEAR+" if spikes_bear else "⬇ RSS BEAR"; sig_color = "bear"
-    elif otm_bull and inst_bull:
-        spike_signal = "⬆⬆ OTM+INST BULL" if spikes_bull else "⬆ OTM+INST BULL"; sig_color = "bull"
-    elif otm_bear and inst_bear:
-        spike_signal = "⬇⬇ OTM+INST BEAR" if spikes_bear else "⬇ OTM+INST BEAR"; sig_color = "bear"
-    elif otm_bull:
-        spike_signal = "⬆⬆ OTM BULL🔥" if strong_move else "⬆ OTM BULL"; sig_color = "bull"
-    elif otm_bear:
-        spike_signal = "⬇⬇ OTM BEAR🔥" if strong_move else "⬇ OTM BEAR"; sig_color = "bear"
-    elif inst_bull:
-        spike_signal = "⬆⬆ INST BULL+" if spikes_bull else "⬆ INST BULL"; sig_color = "bull"
-    elif inst_bear:
-        spike_signal = "⬇⬇ INST BEAR+" if spikes_bear else "⬇ INST BEAR"; sig_color = "bear"
-    elif spikes_bull:
-        spike_signal = "⬆ CE SPIKE"; sig_color = "bull"
-    elif spikes_bear:
-        spike_signal = "⬇ PE SPIKE"; sig_color = "bear"
-    elif sideways:
-        spike_signal = "💥 BREAK OUT" if compression_break else "➖ SIDEWAYS / WAIT"
-        sig_color = "neut"
-    else:
-        spike_signal = "◆ NEUTRAL / WAIT"; sig_color = "neut"
+    if   strong_bull:                  spike_signal = "⬆⬆ CE STRONG 🔥" if otm_bull else "⬆ BULL CONFIRM 🔥"; sig_color = "bull"
+    elif strong_bear:                  spike_signal = "⬇⬇ PE STRONG 🔥" if otm_bear else "⬇ BEAR CONFIRM 🔥"; sig_color = "bear"
+    elif rss_bull and otm_bull:        spike_signal = "⬆⬆ RSS+OTM BULL" if strong_move else "⬆ RSS+OTM BULL"; sig_color = "bull"
+    elif rss_bear and otm_bear:        spike_signal = "⬇⬇ RSS+OTM BEAR" if strong_move else "⬇ RSS+OTM BEAR"; sig_color = "bear"
+    elif rss_bull and otm_bear:        spike_signal = "⚡ CONFLICT ↑RSS↓OTM"; sig_color = "conf"
+    elif rss_bear and otm_bull:        spike_signal = "⚡ CONFLICT ↓RSS↑OTM"; sig_color = "conf"
+    elif rss_bull:                     spike_signal = "⬆ RSS BULL"; sig_color = "bull"
+    elif rss_bear:                     spike_signal = "⬇ RSS BEAR"; sig_color = "bear"
+    elif otm_bull:                     spike_signal = "⬆⬆ OTM BULL🔥" if strong_move else "⬆ OTM BULL"; sig_color = "bull"
+    elif otm_bear:                     spike_signal = "⬇⬇ OTM BEAR🔥" if strong_move else "⬇ OTM BEAR"; sig_color = "bear"
+    elif sideways:                     spike_signal = "💥 BREAK OUT" if compression_break else "➖ SIDEWAYS / WAIT"; sig_color = "neut"
+    else:                              spike_signal = "◆ NEUTRAL / WAIT"; sig_color = "neut"
 
+    # ── SPCL VAL ─────────────────────────────────────────────────────────
+    vix_current  = (vix_info or {}).get("ltp")      or 15.0
     vix_day_open = (vix_info or {}).get("day_open") or vix_current
-    vix_sqrt = math.sqrt(vix_day_open) if vix_day_open else None
-    spcl_val = None
+    vix_sqrt     = math.sqrt(vix_day_open) if vix_day_open else None
+    spcl_val     = None
     if ce_atm and pe_atm and vix_sqrt:
         base_spcl = (math.sqrt(ce_atm + pe_atm) * 3.14) / 2
         spcl_val  = (base_spcl + (base_spcl - vix_sqrt)) / 2
 
+    # ── Expected move ─────────────────────────────────────────────────────
     trading_days_left = calc_trading_days_to_expiry(expiry)
-    per_day_vix = (vix_current / math.sqrt(365)) * math.sqrt(trading_days_left) if vix_current else None
-    vix_per_day = vix_current / trading_days_left if (vix_current and trading_days_left) else None
+    per_day_vix  = (vix_current / math.sqrt(365)) * math.sqrt(trading_days_left) if vix_current else None
+    vix_per_day  = vix_current / trading_days_left if (vix_current and trading_days_left) else None
+    exp_move_pts = (spot * per_day_vix / 100.0) if per_day_vix else None
+    em_steps     = max(round(exp_move_pts / step), 1) if exp_move_pts else None
+    em_upper_strike = atm + em_steps * step if em_steps else None
+    em_lower_strike = atm - em_steps * step if em_steps else None
+    upper_level  = spot + exp_move_pts if exp_move_pts else None
+    lower_level  = spot - exp_move_pts if exp_move_pts else None
 
-    spot_ref     = spot
-    exp_move_pct = per_day_vix
-    exp_move_pts = (spot_ref * per_day_vix / 100.0) if per_day_vix else None
-
-    em_steps        = None
-    em_upper_strike = None
-    em_lower_strike = None
-    if exp_move_pts:
-        em_steps        = max(round(exp_move_pts / step), 1)
-        em_upper_strike = atm + em_steps * step
-        em_lower_strike = atm - em_steps * step
-
-    upper_level = spot_ref + exp_move_pts if exp_move_pts else None
-    lower_level = spot_ref - exp_move_pts if exp_move_pts else None
-
-    ce_intrinsic = max(spot - atm, 0)
-    pe_intrinsic = max(float(atm) - spot, 0)
-    ce_tv = max(ce_atm - ce_intrinsic, 0) if ce_atm else None
-    pe_tv = max(pe_atm - pe_intrinsic, 0) if pe_atm else None
+    # ── Intrinsic / time value ────────────────────────────────────────────
+    ce_intrinsic      = max(spot - atm, 0)
+    pe_intrinsic      = max(float(atm) - spot, 0)
+    ce_tv             = max(ce_atm - ce_intrinsic, 0) if ce_atm else None
+    pe_tv             = max(pe_atm - pe_intrinsic, 0) if pe_atm else None
     ce_iv_pct_display = (ce_intrinsic / ce_atm * 100) if ce_atm else 0.0
     pe_iv_pct_display = (pe_intrinsic / pe_atm * 100) if pe_atm else 0.0
 
-    prev_avg_ce = prev_state.get("avg_ce_erosion", call_erosion)
-    prev_avg_pe = prev_state.get("avg_pe_erosion", put_erosion)
+    # ── Gamma / spike scores ──────────────────────────────────────────────
+    dist_from_atm = abs(spot - atm)
+    gamma_score   = 100.0 / (1.0 + (dist_from_atm / step))
+    vix_boost     = vix_current / 15.0
+    buffer        = step * 0.25
+    ce_bias = 1.2 if spot > atm + buffer else (0.8 if spot < atm - buffer else 1.0)
+    pe_bias = 1.2 if spot < atm - buffer else (0.8 if spot > atm + buffer else 1.0)
+    ce_iv_g = max((ce_atm - max(spot - atm, 0)) / ce_atm * 100, 0) if ce_atm > 0 else 0.0
+    pe_iv_g = max((pe_atm - max(float(atm) - spot, 0)) / pe_atm * 100, 0) if pe_atm > 0 else 0.0
+    ce_spike_score = gamma_score * (1.0 + ce_iv_g / 100.0) * vix_boost * ce_bias
+    pe_spike_score = gamma_score * (1.0 + pe_iv_g / 100.0) * vix_boost * pe_bias
+    score_diff     = ce_spike_score - pe_spike_score
+
+    # ── BTST decay edge ───────────────────────────────────────────────────
+    prev_avg_ce    = prev_state.get("avg_ce_erosion", call_erosion)
+    prev_avg_pe    = prev_state.get("avg_pe_erosion", put_erosion)
     avg_ce_erosion = (call_erosion + prev_avg_ce) / 2
     avg_pe_erosion = (put_erosion  + prev_avg_pe) / 2
-
-    total_erosion = avg_ce_erosion + avg_pe_erosion
-    ce_edge_pct = (avg_ce_erosion / total_erosion * 100) if total_erosion > 0 else 50.0
-    pe_edge_pct = (avg_pe_erosion / total_erosion * 100) if total_erosion > 0 else 50.0
-
-    decay_velocity = dominance_accel
+    total_ero      = avg_ce_erosion + avg_pe_erosion
+    ce_edge_pct    = (avg_ce_erosion / total_ero * 100) if total_ero > 0 else 50.0
+    pe_edge_pct    = (avg_pe_erosion / total_ero * 100) if total_ero > 0 else 50.0
+    decay_velocity  = dominance_accel
     btst_conviction = abs(ce_edge_pct - pe_edge_pct)
 
-    max_ce_erosion = max(ce1e, ce2e, ce3e, ce4e)
-    max_pe_erosion = max(pe1e, pe2e, pe3e, pe4e)
-    max_ce_idx = [ce1e, ce2e, ce3e, ce4e].index(max_ce_erosion) + 1
-    max_pe_idx = [pe1e, pe2e, pe3e, pe4e].index(max_pe_erosion) + 1
-    max_ce_strike = atm + max_ce_idx * step
-    max_pe_strike = atm - max_pe_idx * step
+    max_ce_ero = max(ce1e, ce2e, ce3e, ce4e)
+    max_pe_ero = max(pe1e, pe2e, pe3e, pe4e)
+    max_ce_str = atm + ([ce1e, ce2e, ce3e, ce4e].index(max_ce_ero) + 1) * step
+    max_pe_str = atm - ([pe1e, pe2e, pe3e, pe4e].index(max_pe_ero) + 1) * step
 
-    btst_bear = dominance < -threshold_rrs and max_ce_erosion > max_pe_erosion and decay_velocity < 0
-    btst_bull = dominance >  threshold_rrs and max_pe_erosion > max_ce_erosion and decay_velocity > 0
+    btst_bear = dominance < -thr and max_ce_ero > max_pe_ero and decay_velocity < 0
+    btst_bull = dominance >  thr and max_pe_ero > max_ce_ero and decay_velocity > 0
 
     h = now_ist.hour; mn = now_ist.minute
     after_1515 = h > 15 or (h == 15 and mn >= 15)
 
     if not after_1515:
-        btst_signal = "⏳ Wait for 15:15"; btst_color = "gray"
-        btst_target = "—"
+        btst_signal = "⏳ Wait for 15:15"; btst_color = "gray"; btst_target = "—"
     elif btst_bear and btst_conviction > 15:
         btst_signal = "⬇ BTST SHORT"; btst_color = "bear"
-        btst_target = f"Max decay: CE {max_ce_strike} ({max_ce_erosion*100:.1f}%)"
+        btst_target = f"Max decay: CE {max_ce_str} ({max_ce_ero*100:.1f}%)"
     elif btst_bull and btst_conviction > 15:
         btst_signal = "⬆ BTST LONG"; btst_color = "bull"
-        btst_target = f"Max decay: PE {max_pe_strike} ({max_pe_erosion*100:.1f}%)"
-    elif dominance < -threshold_rrs:
+        btst_target = f"Max decay: PE {max_pe_str} ({max_pe_ero*100:.1f}%)"
+    elif dominance < -thr:
         btst_signal = "⬇ WEAK SHORT"; btst_color = "bear"
-        btst_target = f"CE {max_ce_strike} eroding {max_ce_erosion*100:.1f}%"
-    elif dominance > threshold_rrs:
+        btst_target = f"CE {max_ce_str} eroding {max_ce_ero*100:.1f}%"
+    elif dominance > thr:
         btst_signal = "⬆ WEAK LONG"; btst_color = "bull"
-        btst_target = f"PE {max_pe_strike} eroding {max_pe_erosion*100:.1f}%"
+        btst_target = f"PE {max_pe_str} eroding {max_pe_ero*100:.1f}%"
     else:
-        btst_signal = "◆ NO EDGE"; btst_color = "neut"
-        btst_target = "Decay balanced — skip BTST"
+        btst_signal = "◆ NO EDGE"; btst_color = "neut"; btst_target = "Decay balanced — skip BTST"
 
+    # ── Persist state ─────────────────────────────────────────────────────
     new_state = dict(
         ce1_open=ce1_open, ce2_open=ce2_open, ce3_open=ce3_open, ce4_open=ce4_open,
         pe1_open=pe1_open, pe2_open=pe2_open, pe3_open=pe3_open, pe4_open=pe4_open,
-        prev_call_ero1=call_erosion, prev_call_ero2=prev_ce1,
-        prev_put_ero1=put_erosion,   prev_put_ero2=prev_pe1,
-        prev_dom1=dominance, prev_vol1=volatility, prev_vol2=prev_vol1,
+        call_ema=call_ema, put_ema=put_ema,
+        call_ema_fast=call_ema_fast, put_ema_fast=put_ema_fast,
+        call_ema_slow=call_ema_slow, put_ema_slow=put_ema_slow,
+        dom_avg=dom_avg, dom_history=dom_history,
+        bull_count=bull_count, bear_count=bear_count,
+        dom_rising_count=dom_rising_count, dom_falling_count=dom_falling_count,
+        vol_rising_count=vol_rising_count,
+        confirmed_trend=confirmed_trend, prev_trend_sign=prev_trend_sign,
+        rev_count=rev_count,
+        prev_dom1=dominance, prev_dom2=prev_dom1,
+        prev_vol1=volatility, prev_vol2=prev_vol1,
         prev_sideways=sideways, prev_iv_peak=iv_peak,
-        dom_history=dom_history,
+        prev_dom_velocity_pg=dom_velocity_pg,
         avg_ce_erosion=avg_ce_erosion, avg_pe_erosion=avg_pe_erosion,
     )
+
+    # Determine which signal source fired for display in RRS table
+    if   expiry_signal:    signal_source = "Expiry"
+    elif gamma_signal:     signal_source = "Gamma"
+    elif pre_gamma_signal: signal_source = "PreGamma"
+    elif writer_signal:    signal_source = "Writer Cap"
+    elif iv_signal:        signal_source = "IV Crush"
+    elif smart_bias:       signal_source = "Smart"
+    else:                  signal_source = "Core"
 
     return dict(
         spot=spot, atm=atm, step=step,
@@ -864,7 +811,7 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         vix_current=vix_current, vix_day_open=vix_day_open,
         trading_days_left=trading_days_left,
         per_day_vix=per_day_vix, vix_per_day=vix_per_day,
-        exp_move_pts=exp_move_pts, exp_move_pct=exp_move_pct,
+        exp_move_pts=exp_move_pts, exp_move_pct=per_day_vix,
         upper_level=upper_level, lower_level=lower_level,
         em_upper_strike=em_upper_strike, em_lower_strike=em_lower_strike,
         ce_intrinsic=ce_intrinsic, pe_intrinsic=pe_intrinsic,
@@ -875,13 +822,16 @@ def compute_rrs_analysis(result, otm_ltps, expiry, vix_info, now_ist, prev_state
         vix_boost=vix_boost, ce_spike_score=ce_spike_score, pe_spike_score=pe_spike_score,
         score_diff=score_diff,
         spike_signal=spike_signal, sig_color=sig_color,
-        inst_signal=inst_signal,
-        otm_trend_final=otm_trend_final, smart_prob=smart_prob,
+        trend_arrow=trend_arrow, signal_source=signal_source,
+        core_trend=core_trend,
+        writer_signal=writer_signal, pre_gamma_signal=pre_gamma_signal, gamma_signal=gamma_signal,
+        confirmed_trend=confirmed_trend,
+        dom_pending_bull=dom_pending_bull, dom_pending_bear=dom_pending_bear,
+        smart_prob=smart_prob, smart_bias=smart_bias,
         dominance=dominance, momentum_diff=momentum_diff,
-        strong_move=strong_move, sideways=sideways,
+        strong_move=strong_move, sideways=sideways, dom_avg=dom_avg,
         btst_signal=btst_signal, btst_color=btst_color, btst_target=btst_target,
-        ce_edge_pct=ce_edge_pct, pe_edge_pct=pe_edge_pct,
-        decay_velocity=decay_velocity,
+        ce_edge_pct=ce_edge_pct, pe_edge_pct=pe_edge_pct, decay_velocity=decay_velocity,
         is_expiry_day=is_expiry_day,
         new_state=new_state,
     )
@@ -895,12 +845,9 @@ def _na(v, fmt="{:.2f}", fallback="N/A"):
     return fmt.format(v)
 
 def pcr_html(pcr):
-    if pcr > 1.2:
-        cls, tag, text = "pcr-bull-c", "pcr-tag-bull", "BULLISH"
-    elif pcr < 0.8:
-        cls, tag, text = "pcr-bear-c", "pcr-tag-bear", "BEARISH"
-    else:
-        cls, tag, text = "pcr-neut-c", "pcr-tag-neut", "NEUTRAL"
+    if   pcr > 1.2: cls, tag, text = "pcr-bull-c", "pcr-tag-bull", "BULLISH"
+    elif pcr < 0.8: cls, tag, text = "pcr-bear-c", "pcr-tag-bear", "BEARISH"
+    else:           cls, tag, text = "pcr-neut-c", "pcr-tag-neut", "NEUTRAL"
     return (f"<div class='pcr-wrap'>"
             f"<span class='pcr-label'>PCR</span>"
             f"<span class='pcr-val {cls}'>{pcr:.2f}</span>"
@@ -908,8 +855,18 @@ def pcr_html(pcr):
             f"<span class='pcr-label' style='margin-left:4px;font-size:9px;'>CE:ATM→+6 | PE:ATM→-6</span>"
             f"</div>")
 
+def _trend_row_class(signal):
+    s = signal.upper()
+    if any(x in s for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑", "SMART BULL", "EXP VOL"]):
+        return "r-trend-bull"
+    if any(x in s for x in ["⬇", "BEAR", "CALL WRITER", "IV CRUSH", "GAMMA↓", "PRE-GAMMA ↓", "EXP TRAP", "SMART BEAR"]):
+        return "r-trend-bear"
+    if any(x in s for x in ["CONFLICT", "PENDING", "BUILDING"]):
+        return "r-trend-conf"
+    return "r-trend-neut"
+
 def render_table(r, symbol, expiry, analysis=None):
-    bear = r["bearish"]
+    bear       = r["bearish"]
     bias_cls   = "r-bias-bear" if bear else "r-bias-bull"
     bias_arrow = "▼" if bear else "▲"
     bias_txt   = "BEARISH" if bear else "BULLISH"
@@ -918,75 +875,45 @@ def render_table(r, symbol, expiry, analysis=None):
                    f"√PE {r['pe_sqrt']:.2f} &gt; √CE {r['ce_sqrt']:.2f}")
 
     def ce_row(x):
-        return (f"<tr class='r-ce-bg'>"
-                f"<td><span class='tag-ce'>CE</span></td>"
+        return (f"<tr class='r-ce-bg'><td><span class='tag-ce'>CE</span></td>"
                 f"<td class='r-ce'>{x['label']}</td>"
                 f"<td class='strike-num'>{x['strike']}</td>"
-                f"<td class='price-num r-ce'>{x['price']:.2f}</td>"
-                f"</tr>")
+                f"<td class='price-num r-ce'>{x['price']:.2f}</td></tr>")
 
     def pe_row(x):
-        return (f"<tr class='r-pe-bg'>"
-                f"<td><span class='tag-pe'>PE</span></td>"
+        return (f"<tr class='r-pe-bg'><td><span class='tag-pe'>PE</span></td>"
                 f"<td class='r-pe'>{x['label']}</td>"
                 f"<td class='strike-num'>{x['strike']}</td>"
-                f"<td class='price-num r-pe'>{x['price']:.2f}</td>"
-                f"</tr>")
+                f"<td class='price-num r-pe'>{x['price']:.2f}</td></tr>")
 
     ce_rows_html = "".join(ce_row(x) for x in r["ce_rows"])
     pe_rows_html = "".join(pe_row(x) for x in r["pe_rows"])
 
-    # ── Trend row (mirrors Pine trendArrow — inst signal takes priority) ──
+    # ── Trend row — Pine-faithful trend_arrow ────────────────────────────
     trend_row_html = ""
     if analysis:
-        inst  = analysis.get("inst_signal", "")
-        otm   = analysis.get("otm_trend_final", "")
-        # Prefer the more specific institutional signal over raw OTM trend
-        display_trend = inst if (inst and inst != "—") else otm
-
-        if any(x in display_trend for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑"]):
-            tr_cls = "r-trend-bull"
-        elif any(x in display_trend for x in ["⬇", "BEAR", "CALL WRITER", "IV CRUSH", "GAMMA↓", "PRE-GAMMA ↓"]):
-            tr_cls = "r-trend-bear"
-        else:
-            tr_cls = "r-trend-neut"
-
+        ta     = analysis.get("trend_arrow", "")
+        src    = analysis.get("signal_source", "")
+        tr_cls = _trend_row_class(ta)
         trend_row_html = (
             f"<tr class='r-trend {tr_cls}'>"
-            f"<td colspan='2'>📡 TREND</td>"
-            f"<td colspan='2'>{display_trend}</td>"
+            f"<td colspan='2'>📡 TREND  <span style='font-size:9px;opacity:.6;font-weight:400;'>({src})</span></td>"
+            f"<td colspan='2'>{ta}</td>"
             f"</tr>"
         )
 
     st.markdown(f"""
     <table class='opt-table'>
-      <thead>
-        <tr>
-          <th style='width:32px;'></th>
-          <th>Strike</th>
-          <th>Label</th>
-          <th>LTP</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th style='width:32px;'></th><th>Strike</th><th>Label</th><th>LTP</th>
+      </tr></thead>
       <tbody>
         {ce_rows_html}
-        <tr class='r-sum'>
-          <td colspan='3'>CE SUM</td>
-          <td>{r['ce_sum']:.2f}</td>
-        </tr>
-        <tr class='r-sqrt'>
-          <td colspan='3'>√ CE</td>
-          <td>{r['ce_sqrt']:.2f}</td>
-        </tr>
+        <tr class='r-sum'><td colspan='3'>CE SUM</td><td>{r['ce_sum']:.2f}</td></tr>
+        <tr class='r-sqrt'><td colspan='3'>√ CE</td><td>{r['ce_sqrt']:.2f}</td></tr>
         {pe_rows_html}
-        <tr class='r-sum'>
-          <td colspan='3'>PE SUM</td>
-          <td>{r['pe_sum']:.2f}</td>
-        </tr>
-        <tr class='r-sqrt'>
-          <td colspan='3'>√ PE</td>
-          <td>{r['pe_sqrt']:.2f}</td>
-        </tr>
+        <tr class='r-sum'><td colspan='3'>PE SUM</td><td>{r['pe_sum']:.2f}</td></tr>
+        <tr class='r-sqrt'><td colspan='3'>√ PE</td><td>{r['pe_sqrt']:.2f}</td></tr>
         <tr class='r-bias {bias_cls}'>
           <td colspan='2'>{bias_arrow} {bias_txt}</td>
           <td colspan='2'>{bias_detail}</td>
@@ -997,53 +924,40 @@ def render_table(r, symbol, expiry, analysis=None):
     """, unsafe_allow_html=True)
 
 def _sig_row_class(sig_color):
-    if sig_color == "bull": return "signal-bull"
-    if sig_color == "bear": return "signal-bear"
-    if sig_color == "conf": return "signal-conf"
-    return "signal-neut"
+    return {"bull": "signal-bull", "bear": "signal-bear", "conf": "signal-conf"}.get(sig_color, "signal-neut")
 
 def _btst_cls(btst_color):
-    if btst_color == "bull": return "btst-bull"
-    if btst_color == "bear": return "btst-bear"
-    return "btst-neut"
+    return {"bull": "btst-bull", "bear": "btst-bear"}.get(btst_color, "btst-neut")
 
 def render_rrs_table(a, symbol, expiry):
     def row(label, v_left, v_right, lc="v-w", rc="v-gray"):
-        return (f"<tr>"
-                f"<td class='lbl'>{label}</td>"
+        return (f"<tr><td class='lbl'>{label}</td>"
                 f"<td class='{lc}'>{v_left}</td>"
-                f"<td class='{rc}'>{v_right}</td>"
-                f"</tr>")
+                f"<td class='{rc}'>{v_right}</td></tr>")
 
     def sec(title, c1="CALL", c2="PUT"):
         return (f"<tr class='sec-hdr-row'>"
-                f"<td>── {title} ──</td>"
-                f"<td>{c1}</td><td>{c2}</td>"
-                f"</tr>")
+                f"<td>── {title} ──</td><td>{c1}</td><td>{c2}</td></tr>")
 
     sig_cls  = _sig_row_class(a["sig_color"])
     btst_cls = _btst_cls(a["btst_color"])
 
-    if "⬆" in a["otm_trend_final"]: otm_c = "v-g"
-    elif "⬇" in a["otm_trend_final"]: otm_c = "v-r"
-    else: otm_c = "v-gray"
+    ta = a["trend_arrow"]
+    if any(x in ta for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑"]):
+        ta_c = "v-g"
+    elif any(x in ta for x in ["⬇", "BEAR", "CALL WRITER", "IV CRUSH", "GAMMA↓", "PRE-GAMMA ↓"]):
+        ta_c = "v-r"
+    elif any(x in ta for x in ["PENDING", "CONFLICT", "BUILDING"]):
+        ta_c = "v-y"
+    else:
+        ta_c = "v-gray"
 
-    gs = a["gamma_score"]
-    if gs > 70: gsc = "v-g"
-    elif gs > 40: gsc = "v-o"
-    else: gsc = "v-r"
+    gs  = a["gamma_score"]
+    gsc = "v-g" if gs > 70 else ("v-o" if gs > 40 else "v-r")
     gs_label = "High — near ATM" if gs > 70 else ("Medium" if gs > 40 else "Low — far OTM")
 
-    inst = a["inst_signal"]
-    if "↑" in inst or "BULL" in inst or "PUT WRITER" in inst: inst_c = "v-g"
-    elif "↓" in inst or "BEAR" in inst or "IV CRUSH" in inst or "CALL WRITER" in inst: inst_c = "v-r"
-    elif "GAMMA" in inst: inst_c = "v-g"
-    elif "EXP" in inst: inst_c = "v-r"
-    elif "SMART" in inst or "BUILDING" in inst: inst_c = "v-y"
-    else: inst_c = "v-gray"
-
-    thr = 0.04
-    dom_c = "v-g" if a["dominance"] > thr else ("v-r" if a["dominance"] < -thr else "v-gray")
+    thr   = DOMINANCE_THRESHOLD
+    dom_c = "v-g" if a["dominance"] >  thr else ("v-r" if a["dominance"] < -thr else "v-gray")
     mom_c = "v-g" if a["momentum_diff"] > 0 else ("v-r" if a["momentum_diff"] < 0 else "v-gray")
     mom_state = "Strong" if a["strong_move"] else ("Sideways" if a["sideways"] else "Moderate")
 
@@ -1052,113 +966,70 @@ def render_rrs_table(a, symbol, expiry):
     emp   = _na(a["exp_move_pts"],    "{:.2f}")
     ul    = _na(a["upper_level"],     "{:.0f}")
     ll    = _na(a["lower_level"],     "{:.0f}")
-
     em_ce_str = f"+{emp} → {ul}" if a["exp_move_pts"] else "N/A"
     em_pe_str = f"-{emp} → {ll}" if a["exp_move_pts"] else "N/A"
-
-    vix_c = a["vix_current"]
-    vix_o = a["vix_day_open"]
     spcl  = _na(a["spcl_val"], "{:.2f}")
 
+    ct   = a.get("confirmed_trend", "neutral")
+    ct_c = "v-g" if ct == "bull" else ("v-r" if ct == "bear" else "v-gray")
+
+    # Sub-signals for display
+    sub_signals = " · ".join(filter(None, [
+        a.get("writer_signal", ""),
+        a.get("pre_gamma_signal", ""),
+        a.get("gamma_signal", ""),
+        a.get("smart_bias", ""),
+    ])) or "—"
+
     html = f"""
-    <table class='rrs-table'>
-      <tbody>
-        {sec("Option Data")}
-        {row("LTP (ATM)",
-             _na(a['ce_atm']), _na(a['pe_atm']),
-             "v-o", "v-o")}
-        {row("Intrinsic Value",
-             _na(a['ce_intrinsic']), _na(a['pe_intrinsic']),
-             "v-g", "v-g")}
-        {row("Time Value",
-             _na(a['ce_tv']), _na(a['pe_tv']),
-             "v-aq", "v-aq")}
-        {row("IV % of Premium",
-             f"{a['ce_iv_pct']:.1f}%", f"{a['pe_iv_pct']:.1f}%",
-             "v-g", "v-g")}
-        {sec("VIX & Expected Move", "Value", "Details")}
-        {row("Current VIX",
-             _na(vix_c), "India VIX",
-             "v-o", "v-gray")}
-        {row("VIX Day Open",
-             _na(vix_o), "Day's opening VIX",
-             "v-o", "v-gray")}
-        {row("Trading Days Left",
-             str(a['trading_days_left']), f"to {expiry}",
-             "v-y", "v-gray")}
-        {row("VIX Per Day",
-             _na(a['vix_per_day']), "VIX ÷ Days Left",
-             "v-o", "v-gray")}
-        {row("Expected Move %",
-             _na(a['exp_move_pct']) + "%" if a['exp_move_pct'] else "N/A",
-             "VIX/√365 × √DaysLeft",
-             "v-g", "v-gray")}
-        {row("Expected Move (Pts)",
-             emp, "Price × Move%",
-             "v-g", "v-gray")}
-        {row("EM Range (CE side)",
-             em_ce_str, f"→ {em_up}",
-             "v-g", "v-gray")}
-        {row("EM Range (PE side)",
-             em_pe_str, f"→ {em_lo}",
-             "v-r", "v-gray")}
-        {sec("Gamma + Spike Signal")}
-        {row("Dist from ATM",
-             _na(a['dist_from_atm']), "pts (0 = max gamma)",
-             "v-y", "v-gray")}
-        {row("Gamma Score",
-             f"{a['gamma_score']:.1f}", gs_label,
-             gsc, gsc)}
-        {row("VIX Boost",
-             f"{a['vix_boost']:.2f}x", "VIX ÷ 15",
-             "v-o", "v-gray")}
-        {row("Spike Score",
-             f"{a['ce_spike_score']:.1f}", f"{a['pe_spike_score']:.1f}",
-             "v-ce", "v-pe")}
-        {row("Score Edge",
-             f"{abs(a['score_diff']):.1f}",
-             "Directional" if abs(a['score_diff']) > 10 else "Balanced",
-             "v-w", "v-gray")}
-        <tr class='{sig_cls}'>
-          <td class='lbl'>SPIKE SIGNAL (4-OTM)</td>
-          <td>{a['spike_signal']}</td>
-          <td>{inst}</td>
-        </tr>
-        {row("OTM Trend",
-             a['otm_trend_final'], f"{a['smart_prob']}%",
-             otm_c, "v-o")}
-        {row("Smart Probability",
-             f"{a['smart_prob']}%",
-             "EXPIRY" if a['is_expiry_day'] else "—",
-             "v-o", "v-r" if a['is_expiry_day'] else "v-gray")}
-        <tr class='sec-hdr-row'>
-          <td colspan='3' style='text-align:center;'>── SPCL VAL ──</td>
-        </tr>
-        <tr>
-          <td class='lbl'>SPCL VAL</td>
-          <td class='spcl-val' colspan='2'>{spcl}</td>
-        </tr>
-        {sec("RRS Dominance", "Value", "State")}
-        {row("RRS Dominance",
-             f"{a['dominance']:.4f}", "",
-             dom_c, dom_c)}
-        {row("RRS Momentum",
-             f"{a['momentum_diff']:.4f}", mom_state,
-             mom_c, mom_c)}
-        {sec("BTST Decay Edge", "After 15:15", "Opening Bias")}
-        <tr>
-          <td class='lbl'>BTST Signal</td>
-          <td class='{btst_cls}'>{a['btst_signal']}</td>
-          <td class='{btst_cls}'>{a['btst_target']}</td>
-        </tr>
-        {row("Decay Split (3-min avg)",
-             f"CE {a['ce_edge_pct']:.1f}%", f"PE {a['pe_edge_pct']:.1f}%",
-             "v-r", "v-g")}
-        {row("Decay Velocity",
-             f"{a['decay_velocity']:.4f}", "Trend",
-             "v-o", "v-gray")}
-      </tbody>
-    </table>
+    <table class='rrs-table'><tbody>
+      {sec("Option Data")}
+      {row("LTP (ATM)", _na(a['ce_atm']), _na(a['pe_atm']), "v-o","v-o")}
+      {row("Intrinsic Value", _na(a['ce_intrinsic']), _na(a['pe_intrinsic']), "v-g","v-g")}
+      {row("Time Value", _na(a['ce_tv']), _na(a['pe_tv']), "v-aq","v-aq")}
+      {row("IV % of Premium", f"{a['ce_iv_pct']:.1f}%", f"{a['pe_iv_pct']:.1f}%", "v-g","v-g")}
+      {sec("VIX & Expected Move","Value","Details")}
+      {row("Current VIX", _na(a['vix_current']), "India VIX", "v-o","v-gray")}
+      {row("VIX Day Open", _na(a['vix_day_open']), "Day's opening VIX", "v-o","v-gray")}
+      {row("Trading Days Left", str(a['trading_days_left']), f"to {expiry}", "v-y","v-gray")}
+      {row("VIX Per Day", _na(a['vix_per_day']), "VIX ÷ Days Left", "v-o","v-gray")}
+      {row("Expected Move %", (_na(a['exp_move_pct'])+"%" if a['exp_move_pct'] else "N/A"), "VIX/√365×√Days", "v-g","v-gray")}
+      {row("Expected Move (Pts)", emp, "Price × Move%", "v-g","v-gray")}
+      {row("EM Range (CE side)", em_ce_str, f"→ {em_up}", "v-g","v-gray")}
+      {row("EM Range (PE side)", em_pe_str, f"→ {em_lo}", "v-r","v-gray")}
+      {sec("Gamma + Spike Signal")}
+      {row("Dist from ATM", _na(a['dist_from_atm']), "pts (0=max gamma)", "v-y","v-gray")}
+      {row("Gamma Score", f"{a['gamma_score']:.1f}", gs_label, gsc, gsc)}
+      {row("VIX Boost", f"{a['vix_boost']:.2f}x", "VIX ÷ 15", "v-o","v-gray")}
+      {row("Spike Score", f"{a['ce_spike_score']:.1f}", f"{a['pe_spike_score']:.1f}", "v-ce","v-pe")}
+      {row("Score Edge", f"{abs(a['score_diff']):.1f}", "Directional" if abs(a['score_diff'])>10 else "Balanced", "v-w","v-gray")}
+      <tr class='{sig_cls}'>
+        <td class='lbl'>SPIKE SIGNAL (4-OTM)</td>
+        <td>{a['spike_signal']}</td>
+        <td>{sub_signals}</td>
+      </tr>
+      {sec("Pine Trend (Priority Chain)","Signal","Source")}
+      <tr>
+        <td class='lbl'>TREND ARROW</td>
+        <td class='{ta_c}' style='font-weight:800;font-size:12px;'>{ta}</td>
+        <td class='v-gray' style='font-size:10px;'>{a.get("signal_source","")}</td>
+      </tr>
+      {row("Confirmed Trend", ct.upper(), f"bull={ct=='bull'} bear={ct=='bear'}", ct_c, ct_c)}
+      {row("Smart Probability", f"{a['smart_prob']}%", "EXPIRY" if a['is_expiry_day'] else "—", "v-o", "v-r" if a['is_expiry_day'] else "v-gray")}
+      <tr class='sec-hdr-row'><td colspan='3' style='text-align:center;'>── SPCL VAL ──</td></tr>
+      <tr><td class='lbl'>SPCL VAL</td><td class='spcl-val' colspan='2'>{spcl}</td></tr>
+      {sec("RRS Dominance","Value","State")}
+      {row("RRS Dominance", f"{a['dominance']:.4f}", f"domAvg={a['dom_avg']:.4f}", dom_c, dom_c)}
+      {row("RRS Momentum (EMA5)", f"{a['momentum_diff']:.4f}", mom_state, mom_c, mom_c)}
+      {sec("BTST Decay Edge","After 15:15","Opening Bias")}
+      <tr>
+        <td class='lbl'>BTST Signal</td>
+        <td class='{btst_cls}'>{a['btst_signal']}</td>
+        <td class='{btst_cls}'>{a['btst_target']}</td>
+      </tr>
+      {row("Decay Split (3-min avg)", f"CE {a['ce_edge_pct']:.1f}%", f"PE {a['pe_edge_pct']:.1f}%", "v-r","v-g")}
+      {row("Decay Velocity", f"{a['decay_velocity']:.4f}", "Trend", "v-o","v-gray")}
+    </tbody></table>
     """
     st.markdown(html, unsafe_allow_html=True)
 
@@ -1171,24 +1042,17 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 
     if exp_err == "token_expired":
         del st.session_state["access_token"]; st.rerun()
-
     if exp_err or not expiry_dates:
-        st.markdown(f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: {exp_err}</div>",
-                    unsafe_allow_html=True)
+        st.markdown(f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: {exp_err}</div>", unsafe_allow_html=True)
         return
 
     expiry_key = f"selected_expiry_{sym}"
-    if expiry_key not in st.session_state:
-        st.session_state[expiry_key] = expiry_dates[0]
-    if st.session_state[expiry_key] not in expiry_dates:
-        st.session_state[expiry_key] = expiry_dates[0]
+    if expiry_key not in st.session_state:           st.session_state[expiry_key] = expiry_dates[0]
+    if st.session_state[expiry_key] not in expiry_dates: st.session_state[expiry_key] = expiry_dates[0]
 
-    selected = st.selectbox(
-        f"Expiry — {DISPLAY_NAME[sym]}",
-        options=expiry_dates,
-        index=expiry_dates.index(st.session_state[expiry_key]),
-        key=f"sb_{sym}",
-    )
+    selected = st.selectbox(f"Expiry — {DISPLAY_NAME[sym]}", options=expiry_dates,
+                            index=expiry_dates.index(st.session_state[expiry_key]),
+                            key=f"sb_{sym}")
     st.session_state[expiry_key] = selected
 
     with st.spinner(""):
@@ -1196,10 +1060,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 
     if chain_err == "token_expired":
         del st.session_state["access_token"]; st.rerun()
-
     if chain_err or not data:
-        st.markdown(f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: {chain_err}</div>",
-                    unsafe_allow_html=True)
+        st.markdown(f"<div class='err-box'>⚠️ {DISPLAY_NAME[sym]}: {chain_err}</div>", unsafe_allow_html=True)
         with st.expander("🔍 Debug"):
             st.write(f"**Key:** `{INSTRUMENT_KEY[sym]}`")
             st.write(f"**Expiry:** `{selected}`")
@@ -1212,14 +1074,10 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         st.markdown(f"<div class='err-box'>⚠️ Parse error — {e}</div>", unsafe_allow_html=True)
         return
 
-    # ── OTM LTPs (from chain data, no extra call) ──
-    otm_ltps = fetch_otm_ltps(access_token, sym, selected, result["atm"], result["step"], data)
-
-    # ── RRS state persistence (per symbol+expiry) ──
-    state_key = f"rrs_state_{sym}_{selected}"
+    otm_ltps   = fetch_otm_ltps(access_token, sym, selected, result["atm"], result["step"], data)
+    state_key  = f"rrs_state_{sym}_{selected}"
     prev_state = st.session_state.get(state_key, {})
 
-    # ── Compute analysis ──
     try:
         analysis = compute_rrs_analysis(result, otm_ltps, selected, vix_info, now_ist, prev_state, sym)
         st.session_state[state_key] = analysis["new_state"]
@@ -1227,27 +1085,19 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         analysis = None
         st.markdown(f"<div class='err-box'>⚠️ Analysis error — {e}</div>", unsafe_allow_html=True)
 
-    # ── Instrument card ──
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
-        f"  <div>"
-        f"    <div class='inst-name'>{DISPLAY_NAME[sym]}</div>"
-        f"    <div class='inst-meta'>EXP {selected}</div>"
-        f"  </div>"
+        f"  <div><div class='inst-name'>{DISPLAY_NAME[sym]}</div>"
+        f"       <div class='inst-meta'>EXP {selected}</div></div>"
         f"  <div style='text-align:right;'>"
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
-        f"  </div>"
-        f"</div>"
+        f"  </div></div>"
         f"{pcr_html(result['pcr'])}"
-        f"</div>",
-        unsafe_allow_html=True)
+        f"</div>", unsafe_allow_html=True)
 
-    # ── Options table (with trend row) ──
     render_table(result, sym, selected, analysis)
-
-    # ── RRS / Analysis table ──
     if analysis:
         render_rrs_table(analysis, sym, selected)
 
@@ -1272,9 +1122,9 @@ def show_setup_guide():
 # ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
-now = datetime.now(IST)
-mkt = now.weekday() < 5 and (9, 15) <= (now.hour, now.minute) <= (15, 30)
-dot = "🟢" if mkt else "🔴"
+now       = datetime.now(IST)
+mkt       = now.weekday() < 5 and (9, 15) <= (now.hour, now.minute) <= (15, 30)
+dot       = "🟢" if mkt else "🔴"
 mkt_label = "OPEN" if mkt else "CLOSED"
 
 st.markdown(
@@ -1282,8 +1132,7 @@ st.markdown(
     f"<span class='app-title'>ATM Options Tracker</span>"
     f"<span class='app-sub'>{dot} {mkt_label} &nbsp;·&nbsp; "
     f"{now.strftime('%d %b %Y %H:%M IST')} &nbsp;·&nbsp; Upstox API</span>"
-    f"</div>",
-    unsafe_allow_html=True)
+    f"</div>", unsafe_allow_html=True)
 
 if not secrets_ok():
     st.markdown("<p style='color:#fc8181;font-size:13px;'>⚠️ Upstox credentials not found in Streamlit secrets.</p>",
@@ -1295,7 +1144,6 @@ api_key      = st.secrets["upstox"]["api_key"]
 api_secret   = st.secrets["upstox"]["api_secret"]
 redirect_uri = st.secrets["upstox"]["redirect_uri"]
 
-# ── OAuth callback ──
 qp        = st.query_params
 auth_code = qp.get("code")
 
@@ -1332,11 +1180,9 @@ if "access_token" not in st.session_state:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-# ── Fetch VIX once (shared across all symbols) ──
 access_token = st.session_state["access_token"]
-vix_info = fetch_vix(access_token)
+vix_info     = fetch_vix(access_token)
 
-# ── Render groups ──
 for group_title, symbols in SYMBOL_GROUPS:
     st.markdown(f"<div class='sec-hdr'>{group_title}</div>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -1344,7 +1190,6 @@ for group_title, symbols in SYMBOL_GROUPS:
         with col:
             render_symbol(access_token, sym, vix_info, now)
 
-# ── Logout ──
 st.markdown("<br>", unsafe_allow_html=True)
 c1, c2, c3 = st.columns([4, 1, 1])
 with c2:
