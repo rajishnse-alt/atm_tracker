@@ -410,6 +410,10 @@ def parse(data, symbol):
     total_pe_oi_chg = sum(max(pe_oi_chg.get(float(s), 0.0), 0.0) for s in pcr_strikes)
     pcr_oi_chg = (total_pe_oi_chg / total_ce_oi_chg) if total_ce_oi_chg > 0 else 0.0
 
+    # ── ATM OI Changes (for display) ────────────────────────────────────────
+    atm_ce_oi_chg_pct = ce_oi_chg.get(float(atm), 0.0)
+    atm_pe_oi_chg_pct = pe_oi_chg.get(float(atm), 0.0)
+
     return dict(
         spot=spot, atm=atm, step=step,
         ce_map=ce_map, pe_map=pe_map,
@@ -421,6 +425,8 @@ def parse(data, symbol):
         total_pe_oi=total_pe_oi, total_ce_oi=total_ce_oi,
         pcr_oi_chg=pcr_oi_chg,
         total_pe_oi_chg=total_pe_oi_chg, total_ce_oi_chg=total_ce_oi_chg,
+        atm_ce_oi_chg_pct=atm_ce_oi_chg_pct,
+        atm_pe_oi_chg_pct=atm_pe_oi_chg_pct,
     )
 
 # ─────────────────────────────────────────────
@@ -872,11 +878,12 @@ def _pcr_badge(val, label, show_range_note=False):
             f"{note}"
             f"</div>")
 
-def pcr_html(pcr, pcr_oi_chg=None):
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None):
     """
-    Render both PCR badges side by side.
+    Render PCR badges with OI change information.
     - PCR OI   : based on total open interest (standard)
     - PCR Δ OI : based on intraday OI additions (fresh writing sentiment)
+    - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
     badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
 
@@ -884,7 +891,24 @@ def pcr_html(pcr, pcr_oi_chg=None):
         badges += "<span class='pcr-divider'>│</span>"
         badges += _pcr_badge(pcr_oi_chg, "PCR Δ OI")
 
-    return f"<div class='pcr-row'>{badges}</div>"
+    html = f"<div class='pcr-row'>{badges}</div>"
+
+    # Add OI Change row showing ATM Calls and Puts direction
+    if atm_ce_oi_chg is not None and atm_pe_oi_chg is not None:
+        ce_direction = "↑ LONG" if atm_ce_oi_chg > 0 else "↓ SHORT"
+        pe_direction = "↑ LONG" if atm_pe_oi_chg > 0 else "↓ SHORT"
+        ce_color = "#00e676" if atm_ce_oi_chg > 0 else "#ff5252"
+        pe_color = "#00e676" if atm_pe_oi_chg > 0 else "#ff5252"
+
+        html += f"""<div class='pcr-row' style='margin-top:5px;'>
+            <div style='font-family:var(--mono);font-size:11px;color:var(--muted);'>
+                ATM Calls: <span style='color:{ce_color};font-weight:600;'>{ce_direction} (OI {abs(atm_ce_oi_chg):.1f}%)</span>
+                <span class='pcr-divider'>│</span>
+                ATM Puts: <span style='color:{pe_color};font-weight:600;'>{pe_direction} (OI {abs(atm_pe_oi_chg):.1f}%)</span>
+            </div>
+        </div>"""
+
+    return html
 
 def _trend_row_class(signal):
     s = signal.upper()
@@ -1116,8 +1140,10 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         analysis = None
         st.markdown(f"<div class='err-box'>⚠️ Analysis error — {e}</div>", unsafe_allow_html=True)
 
-    # ── Instrument card with both PCR badges ──────────────────────────────
+    # ── Instrument card with both PCR badges and OI Change ──────────────────
     pcr_oi_chg = result.get("pcr_oi_chg")
+    atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct")
+    atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct")
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -1127,7 +1153,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
