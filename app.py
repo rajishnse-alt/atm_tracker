@@ -1246,8 +1246,6 @@ def show_replay_page(access_token, vix_info, now):
             st.session_state["replay_time_index"] = 0
         if "is_replaying" not in st.session_state:
             st.session_state["is_replaying"] = False
-        if "replay_speed" not in st.session_state:
-            st.session_state["replay_speed"] = 1.0
 
         play_col, pause_col = st.columns(2)
         with play_col:
