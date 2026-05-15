@@ -1169,7 +1169,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
     """
     Fetch historical option candles for ATM strikes
-    timeframe_minutes: 1, 3, 15 (converted to "minutes", "3minutes", "15minutes")
+    timeframe_minutes: 1, 3, 15
     Returns: Dict with 'ce_candles' and 'pe_candles' for replay
     """
     try:
@@ -1182,54 +1182,63 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
         oc_response = requests.get(oc_url, params=oc_params, headers=upstox_headers(token), timeout=15)
         oc_data = oc_response.json()
 
+        st.write(f"**Step 1:** Option Chain API Response: {oc_data.get('status')}")
+
         if oc_data.get("status") != "success" or not oc_data.get("data"):
+            st.error(f"❌ Option chain fetch failed: {oc_data}")
             return None
 
         # Parse to find ATM strike
         parsed = parse(oc_data.get("data", []), symbol)
         atm_strike = parsed.get("atm")
 
+        st.write(f"**Step 2:** ATM Strike Found: {atm_strike}")
+
         if not atm_strike:
+            st.error("❌ Could not determine ATM strike from option chain")
             return None
 
         # Step 2: Construct option instrument keys for ATM CE and PE
-        # Format: NSE_FO|NIFTY25JAN10000CE (for indices/stocks)
         exp_date_obj = datetime.strptime(expiry_date, "%Y-%m-%d")
         exp_month = exp_date_obj.strftime("%b").upper()  # JAN, FEB, etc.
         exp_year = str(exp_date_obj.year)[-1]  # Last digit of year (5 for 2025)
 
-        if symbol in ["NIFTY", "BANKNIFTY"]:
-            ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
-            pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
-        else:
-            ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
-            pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
+        ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
+        pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
+
+        st.write(f"**Step 3:** Built Option Keys:")
+        st.write(f"  - CE: `{ce_key}`")
+        st.write(f"  - PE: `{pe_key}`")
 
         # Step 3: Fetch historical candles for both CE and PE
-        # URL format: /v3/historical-candle/{instrument_key}/minutes/{interval}/{from_date}/{to_date}
         candle_url = UPSTOX_HISTORICAL_CANDLE
+        ce_url = f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}"
+        pe_url = f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}"
+
+        st.write(f"**Step 4:** Fetching Historical Candles...")
+        st.write(f"  - CE URL: `{ce_url}`")
 
         # Fetch CE candles
-        ce_response = requests.get(
-            f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}",
-            headers=upstox_headers(token),
-            timeout=15
-        )
+        ce_response = requests.get(ce_url, headers=upstox_headers(token), timeout=15)
         ce_data = ce_response.json()
         ce_candles = ce_data.get("data", []) if ce_data.get("status") == "success" else []
 
+        st.write(f"  - CE Response: {ce_data.get('status')} ({len(ce_candles)} candles)")
+
         # Fetch PE candles
-        pe_response = requests.get(
-            f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}",
-            headers=upstox_headers(token),
-            timeout=15
-        )
+        pe_response = requests.get(pe_url, headers=upstox_headers(token), timeout=15)
         pe_data = pe_response.json()
         pe_candles = pe_data.get("data", []) if pe_data.get("status") == "success" else []
 
+        st.write(f"  - PE Response: {pe_data.get('status')} ({len(pe_candles)} candles)")
+
         if not ce_candles and not pe_candles:
-            st.warning(f"No candle data for {ce_key} or {pe_key}")
+            st.error(f"❌ No candle data returned from Upstox for this date/strike combination")
+            st.write("**Raw responses:**")
+            st.json({"ce_response": ce_data, "pe_response": pe_data})
             return None
+
+        st.success(f"✅ Loaded {len(ce_candles)} CE candles and {len(pe_candles)} PE candles")
 
         return {
             "atm_strike": atm_strike,
@@ -1237,13 +1246,13 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
             "pe_key": pe_key,
             "ce_candles": ce_candles,
             "pe_candles": pe_candles,
-            "oc_data": oc_data.get("data", []),  # Current option chain for reference
+            "oc_data": oc_data.get("data", []),
         }
 
     except Exception as e:
-        st.error(f"Error fetching intraday data: {str(e)}")
+        st.error(f"❌ Error fetching intraday data: {str(e)}")
         import traceback
-        with st.expander("🔍 Debug - Fetch Error"):
+        with st.expander("🔍 Full Error Trace"):
             st.text(traceback.format_exc())
         return None
 
@@ -1329,6 +1338,13 @@ def show_replay_page(access_token, vix_info, now):
             st.session_state["replay_time_index"] = 0
 
     st.divider()
+
+    # Debug: Show what we're requesting
+    with st.expander("🔧 Request Parameters"):
+        st.write(f"**Symbol:** {symbol}")
+        st.write(f"**Expiry:** {selected_expiry}")
+        st.write(f"**Timeframe:** {timeframe} ({int(timeframe.split('-')[0])} minutes)")
+        st.write(f"**Date:** {replay_date}")
 
     # Fetch and display replay data
     try:
