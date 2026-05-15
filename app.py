@@ -191,11 +191,12 @@ SYMBOL_GROUPS = [
     ("🏢 Large Cap Stocks", ["SBIN",     "RELIANCE"]),
 ]
 
-UPSTOX_OC_URLS      = ["https://api.upstox.com/v2/option/chain", "https://api.upstox.com/v3/option/chain"]
-UPSTOX_CONTRACT_URL = "https://api.upstox.com/v2/option/contract"
-UPSTOX_AUTH_URL     = "https://api.upstox.com/v2/login/authorization/dialog"
-UPSTOX_TOKEN_URL    = "https://api.upstox.com/v2/login/authorization/token"
-UPSTOX_MARKET_QUOTE = "https://api.upstox.com/v2/market-quote/quotes"
+UPSTOX_OC_URLS           = ["https://api.upstox.com/v2/option/chain", "https://api.upstox.com/v3/option/chain"]
+UPSTOX_CONTRACT_URL      = "https://api.upstox.com/v2/option/contract"
+UPSTOX_AUTH_URL          = "https://api.upstox.com/v2/login/authorization/dialog"
+UPSTOX_TOKEN_URL         = "https://api.upstox.com/v2/login/authorization/token"
+UPSTOX_MARKET_QUOTE      = "https://api.upstox.com/v2/market-quote/quotes"
+UPSTOX_HISTORICAL_CANDLE = "https://api.upstox.com/v3/historical-candle"
 
 # ─────────────────────────────────────────────
 # EMA HELPER
@@ -1163,29 +1164,87 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 # ─────────────────────────────────────────────
 # FETCH INTRADAY TICK DATA
 # ─────────────────────────────────────────────
+# FETCH HISTORICAL CANDLE DATA
+# ─────────────────────────────────────────────
 def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
     """
-    Fetch intraday OHLC data from Upstox
-    timeframe_minutes: 1, 3, 15
-    Returns: List of {timestamp, open, high, low, close, volume, oi}
+    Fetch historical option candles for ATM strikes
+    timeframe_minutes: 1, 3, 15 (converted to "minutes", "3minutes", "15minutes")
+    Returns: Dict with 'ce_candles' and 'pe_candles' for replay
     """
     try:
-        # Get option chain data at different times
-        url = UPSTOX_OC_URLS[1]  # Use v3 API
-        params = {
+        # Step 1: Get current option chain to find ATM strike
+        oc_url = UPSTOX_OC_URLS[1]
+        oc_params = {
             "instrument_key": INSTRUMENT_KEY[symbol],
             "expiry_date": expiry_date,
         }
+        oc_response = requests.get(oc_url, params=oc_params, headers=upstox_headers(token), timeout=15)
+        oc_data = oc_response.json()
 
-        r = requests.get(url, params=params, headers=upstox_headers(token), timeout=15)
-        d = r.json()
+        if oc_data.get("status") != "success" or not oc_data.get("data"):
+            return None
 
-        if d.get("status") == "success":
-            data = d.get("data", [])
-            return data if data else None
-        return None
+        # Parse to find ATM strike
+        parsed = parse(oc_data.get("data", []), symbol)
+        atm_strike = parsed.get("atm")
+
+        if not atm_strike:
+            return None
+
+        # Step 2: Construct option instrument keys for ATM CE and PE
+        # Format: NSE_FO|NIFTY25JAN10000CE (for indices/stocks)
+        exp_date_obj = datetime.strptime(expiry_date, "%Y-%m-%d")
+        exp_month = exp_date_obj.strftime("%b").upper()  # JAN, FEB, etc.
+        exp_year = str(exp_date_obj.year)[-1]  # Last digit of year (5 for 2025)
+
+        if symbol in ["NIFTY", "BANKNIFTY"]:
+            ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
+            pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
+        else:
+            ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
+            pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
+
+        # Step 3: Fetch historical candles for both CE and PE
+        # URL format: /v3/historical-candle/{instrument_key}/minutes/{interval}/{from_date}/{to_date}
+        candle_url = UPSTOX_HISTORICAL_CANDLE
+
+        # Fetch CE candles
+        ce_response = requests.get(
+            f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}",
+            headers=upstox_headers(token),
+            timeout=15
+        )
+        ce_data = ce_response.json()
+        ce_candles = ce_data.get("data", []) if ce_data.get("status") == "success" else []
+
+        # Fetch PE candles
+        pe_response = requests.get(
+            f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}",
+            headers=upstox_headers(token),
+            timeout=15
+        )
+        pe_data = pe_response.json()
+        pe_candles = pe_data.get("data", []) if pe_data.get("status") == "success" else []
+
+        if not ce_candles and not pe_candles:
+            st.warning(f"No candle data for {ce_key} or {pe_key}")
+            return None
+
+        return {
+            "atm_strike": atm_strike,
+            "ce_key": ce_key,
+            "pe_key": pe_key,
+            "ce_candles": ce_candles,
+            "pe_candles": pe_candles,
+            "oc_data": oc_data.get("data", []),  # Current option chain for reference
+        }
+
     except Exception as e:
-        st.error(f"Error fetching intraday data: {e}")
+        st.error(f"Error fetching intraday data: {str(e)}")
+        import traceback
+        with st.expander("🔍 Debug - Fetch Error"):
+            st.text(traceback.format_exc())
         return None
 
 # ─────────────────────────────────────────────
@@ -1273,40 +1332,80 @@ def show_replay_page(access_token, vix_info, now):
 
     # Fetch and display replay data
     try:
-        data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]))
+        candle_data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]))
 
-        if data:
-            # Parse initial data
-            result = parse(data, symbol)
+        if candle_data:
+            ce_candles = candle_data.get("ce_candles", [])
+            pe_candles = candle_data.get("pe_candles", [])
+            oc_data = candle_data.get("oc_data", [])
+            atm_strike = candle_data.get("atm_strike")
+
+            if not ce_candles or not pe_candles:
+                st.warning("No candle data available for selected ATM strike")
+                return
+
+            # Determine number of candles available
+            num_candles = min(len(ce_candles), len(pe_candles))
 
             # Show time slider
-            num_steps = 75  # ~6 hours of trading data for selected timeframe
-            current_time = st.slider(
+            current_idx = st.slider(
                 "Trading Time",
                 min_value=0,
-                max_value=num_steps - 1,
+                max_value=num_candles - 1,
                 value=st.session_state.get("replay_time_index", 0),
                 step=1,
                 key="replay_slider"
             )
-            st.session_state["replay_time_index"] = current_time
+            st.session_state["replay_time_index"] = current_idx
 
-            # Estimate current time based on slider position
-            start_time = 9 * 60 + 15  # 9:15 AM in minutes
-            tf_minutes = int(timeframe.split("-")[0])
-            current_minutes = start_time + (current_time * tf_minutes)
-            hours = current_minutes // 60
-            mins = current_minutes % 60
-            time_display = f"{hours:02d}:{mins:02d}"
+            # Get candle data at current index
+            ce_candle = ce_candles[current_idx]
+            pe_candle = pe_candles[current_idx]
+            ce_timestamp = ce_candle.get("timestamp", "")
+            pe_timestamp = pe_candle.get("timestamp", "")
+
+            # Extract timestamp for display (format: "2025-01-04T10:15:00Z")
+            try:
+                time_obj = datetime.fromisoformat(ce_timestamp.replace("Z", "+00:00"))
+                time_display = time_obj.strftime("%H:%M")
+            except:
+                time_display = "N/A"
 
             st.markdown(f"### Current Time: {time_display} IST", unsafe_allow_html=True)
 
             st.divider()
 
+            # Construct synthetic option chain data from candles
+            # Using close prices from historical candles
+            ce_close = ce_candle.get("close", 0)
+            pe_close = pe_candle.get("close", 0)
+            ce_oi = ce_candle.get("volume", 0)  # Using volume as proxy for OI
+            pe_oi = pe_candle.get("volume", 0)
+
+            # Build synthetic option chain entry
+            synthetic_oc = [{
+                "strike_price": float(atm_strike),
+                "call_options": [{
+                    "ltp": float(ce_close),
+                    "oi": float(ce_oi),
+                    "bid_qty": 0,
+                    "ask_qty": 0,
+                }],
+                "put_options": [{
+                    "ltp": float(pe_close),
+                    "oi": float(pe_oi),
+                    "bid_qty": 0,
+                    "ask_qty": 0,
+                }],
+            }]
+
+            # Parse to get metrics
+            result = parse(synthetic_oc, symbol)
+
             # Display card with current data
             pcr_oi_chg = result.get("pcr_oi_chg")
-            atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct")
-            atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct")
+            atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct", 0)
+            atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct", 0)
 
             st.markdown(
                 f"<div class='inst-card'>"
@@ -1314,21 +1413,21 @@ def show_replay_page(access_token, vix_info, now):
                 f"  <div><div class='inst-name'>{DISPLAY_NAME[symbol]}</div>"
                 f"       <div class='inst-meta'>EXP {selected_expiry}</div></div>"
                 f"  <div style='text-align:right;'>"
-                f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
+                f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
                 f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg)}"
                 f"</div>", unsafe_allow_html=True)
 
-            # Show options table
-            render_table(result, symbol, selected_expiry, None)
-
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
         else:
-            st.warning("No data available for selected parameters")
+            st.warning("No data available for selected parameters. Check that historical data exists for this date.")
 
     except Exception as e:
-        st.error(f"Replay error: {e}")
+        st.error(f"Replay error: {str(e)}")
+        import traceback
+        with st.expander("Debug Info"):
+            st.text(traceback.format_exc())
 
 # ─────────────────────────────────────────────
 # SETUP GUIDE
