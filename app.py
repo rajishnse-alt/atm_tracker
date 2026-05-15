@@ -1161,6 +1161,178 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         render_rrs_table(analysis, sym, selected)
 
 # ─────────────────────────────────────────────
+# FETCH INTRADAY TICK DATA
+# ─────────────────────────────────────────────
+def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
+    """
+    Fetch intraday OHLC data from Upstox
+    timeframe_minutes: 1, 3, 15
+    Returns: List of {timestamp, open, high, low, close, volume, oi}
+    """
+    try:
+        # Get option chain data at different times
+        url = UPSTOX_OC_URLS[1]  # Use v3 API
+        params = {
+            "instrument_key": INSTRUMENT_KEY[symbol],
+            "expiry_date": expiry_date,
+        }
+
+        r = requests.get(url, params=params, headers=upstox_headers(token), timeout=15)
+        d = r.json()
+
+        if d.get("status") == "success":
+            data = d.get("data", [])
+            return data if data else None
+        return None
+    except Exception as e:
+        st.error(f"Error fetching intraday data: {e}")
+        return None
+
+# ─────────────────────────────────────────────
+# REPLAY PAGE
+# ─────────────────────────────────────────────
+def show_replay_page(access_token, vix_info, now):
+    """Display replay interface with controls"""
+    st.markdown(f"<div class='sec-hdr'>🎬 SIGNAL REPLAY</div>", unsafe_allow_html=True)
+
+    col_back, col_title = st.columns([1, 5])
+    with col_back:
+        if st.button("← Back to Live", use_container_width=True):
+            st.session_state["page"] = "live"
+            st.rerun()
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        symbol = st.selectbox(
+            "Symbol",
+            options=["NIFTY", "BANKNIFTY", "HDFCBANK", "ICICIBANK", "SBIN", "RELIANCE"],
+            key="replay_symbol"
+        )
+
+    with col2:
+        replay_date = st.date_input(
+            "Date",
+            value=now.date(),
+            key="replay_date"
+        )
+
+    with col3:
+        expiry_dates, _ = fetch_expiry_dates(access_token, symbol)
+        if expiry_dates:
+            selected_expiry = st.selectbox(
+                "Expiry",
+                options=expiry_dates,
+                key="replay_expiry"
+            )
+        else:
+            st.error("No expiry dates available")
+            return
+
+    with col4:
+        timeframe = st.selectbox(
+            "Timeframe",
+            options=["1-min", "3-min", "15-min"],
+            key="replay_timeframe"
+        )
+
+    st.divider()
+
+    # Replay controls
+    col_controls = st.columns([2, 1, 1, 3, 1, 1])
+
+    with col_controls[0]:
+        if "replay_time_index" not in st.session_state:
+            st.session_state["replay_time_index"] = 0
+        if "is_replaying" not in st.session_state:
+            st.session_state["is_replaying"] = False
+        if "replay_speed" not in st.session_state:
+            st.session_state["replay_speed"] = 1.0
+
+        play_col, pause_col = st.columns(2)
+        with play_col:
+            if st.button("▶ Play", use_container_width=True, key="replay_play"):
+                st.session_state["is_replaying"] = True
+        with pause_col:
+            if st.button("⏸ Pause", use_container_width=True, key="replay_pause"):
+                st.session_state["is_replaying"] = False
+
+    with col_controls[1]:
+        st.write("")  # Spacer
+
+    with col_controls[2]:
+        speed = st.radio("Speed", ["1x", "2x", "4x"], horizontal=True, key="replay_speed")
+        st.session_state["replay_speed"] = {"1x": 1.0, "2x": 2.0, "4x": 4.0}[speed]
+
+    with col_controls[3]:
+        st.write("")  # Spacer
+
+    with col_controls[4]:
+        if st.button("⏮ Reset", use_container_width=True, key="replay_reset"):
+            st.session_state["replay_time_index"] = 0
+
+    st.divider()
+
+    # Fetch and display replay data
+    try:
+        data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]))
+
+        if data:
+            # Parse initial data
+            result = parse(data, symbol)
+
+            # Show time slider
+            num_steps = 75  # ~6 hours of trading data for selected timeframe
+            current_time = st.slider(
+                "Trading Time",
+                min_value=0,
+                max_value=num_steps - 1,
+                value=st.session_state.get("replay_time_index", 0),
+                step=1,
+                key="replay_slider"
+            )
+            st.session_state["replay_time_index"] = current_time
+
+            # Estimate current time based on slider position
+            start_time = 9 * 60 + 15  # 9:15 AM in minutes
+            tf_minutes = int(timeframe.split("-")[0])
+            current_minutes = start_time + (current_time * tf_minutes)
+            hours = current_minutes // 60
+            mins = current_minutes % 60
+            time_display = f"{hours:02d}:{mins:02d}"
+
+            st.markdown(f"### Current Time: {time_display} IST", unsafe_allow_html=True)
+
+            st.divider()
+
+            # Display card with current data
+            pcr_oi_chg = result.get("pcr_oi_chg")
+            atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct")
+            atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct")
+
+            st.markdown(
+                f"<div class='inst-card'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
+                f"  <div><div class='inst-name'>{DISPLAY_NAME[symbol]}</div>"
+                f"       <div class='inst-meta'>EXP {selected_expiry}</div></div>"
+                f"  <div style='text-align:right;'>"
+                f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
+                f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
+                f"  </div></div>"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg)}"
+                f"</div>", unsafe_allow_html=True)
+
+            # Show options table
+            render_table(result, symbol, selected_expiry, None)
+
+            st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed</div>", unsafe_allow_html=True)
+        else:
+            st.warning("No data available for selected parameters")
+
+    except Exception as e:
+        st.error(f"Replay error: {e}")
+
+# ─────────────────────────────────────────────
 # SETUP GUIDE
 # ─────────────────────────────────────────────
 def show_setup_guide():
@@ -1242,20 +1414,41 @@ if "access_token" not in st.session_state:
 access_token = st.session_state["access_token"]
 vix_info     = fetch_vix(access_token)
 
-for group_title, symbols in SYMBOL_GROUPS:
-    st.markdown(f"<div class='sec-hdr'>{group_title}</div>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    for col, sym in zip([col1, col2], symbols):
-        with col:
-            render_symbol(access_token, sym, vix_info, now)
+# Initialize page state
+if "page" not in st.session_state:
+    st.session_state["page"] = "live"
 
-st.markdown("<br>", unsafe_allow_html=True)
-c1, c2, c3 = st.columns([4, 1, 1])
-with c2:
-    if st.button("🔓 Logout"):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+# Sidebar navigation
+with st.sidebar:
+    st.markdown("### 📱 Navigation")
+    page = st.radio(
+        "Select View",
+        options=["📊 Live", "🎬 Replay"],
+        key="page_radio",
+        label_visibility="collapsed"
+    )
+    st.session_state["page"] = "live" if "Live" in page else "replay"
+    st.divider()
+
+# Show appropriate page
+if st.session_state["page"] == "live":
+    for group_title, symbols in SYMBOL_GROUPS:
+        st.markdown(f"<div class='sec-hdr'>{group_title}</div>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        for col, sym in zip([col1, col2], symbols):
+            with col:
+                render_symbol(access_token, sym, vix_info, now)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([4, 1, 1])
+    with c2:
+        if st.button("🔓 Logout"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+
+else:  # Replay page
+    show_replay_page(access_token, vix_info, now)
 
 st.markdown(
     f"<p class='refresh-note'>↻ auto-refresh 3 min &nbsp;·&nbsp; "
