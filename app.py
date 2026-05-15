@@ -1222,10 +1222,23 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes, candle_da
         oc_response = requests.get(oc_url, params=oc_params, headers=upstox_headers(token), timeout=15)
         oc_data = oc_response.json()
 
-        st.write(f"**Step 1:** Option Chain API Response: {oc_data.get('status')}")
+        oc_status = oc_data.get('status', 'unknown')
+        st.write(f"**Step 1:** Option Chain API Response: {oc_status}")
 
-        if oc_data.get("status") != "success" or not oc_data.get("data"):
-            st.error(f"❌ Option chain fetch failed: {oc_data}")
+        if oc_status != "success":
+            error_info = oc_data.get('errors', [{}])[0]
+            error_code = error_info.get('errorCode', 'Unknown')
+            error_msg = error_info.get('message', 'No error message')
+            st.error(f"❌ Option chain API failed ({error_code}): {error_msg}")
+            st.write("**Debugging info:**")
+            st.write(f"- Instrument Key: `{INSTRUMENT_KEY[symbol]}`")
+            st.write(f"- Expiry Date: `{normalized_expiry}`")
+            st.write(f"- Full Response: {oc_data}")
+            return None
+
+        if not oc_data.get("data"):
+            st.error("❌ Option chain returned empty data")
+            st.write(f"Full Response: {oc_data}")
             return None
 
         # Parse to find ATM strike
