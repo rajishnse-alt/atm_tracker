@@ -1261,8 +1261,8 @@ def show_replay_page(access_token, vix_info, now):
         st.write("")  # Spacer
 
     with col_controls[2]:
-        speed = st.radio("Speed", ["1x", "2x", "4x"], horizontal=True, key="replay_speed")
-        st.session_state["replay_speed"] = {"1x": 1.0, "2x": 2.0, "4x": 4.0}[speed]
+        speed = st.radio("Speed", ["1x", "2x", "4x"], horizontal=True, key="replay_speed_radio")
+        speed_multiplier = {"1x": 1.0, "2x": 2.0, "4x": 4.0}[speed]
 
     with col_controls[3]:
         st.write("")  # Spacer
@@ -1325,7 +1325,7 @@ def show_replay_page(access_token, vix_info, now):
             # Show options table
             render_table(result, symbol, selected_expiry, None)
 
-            st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
         else:
             st.warning("No data available for selected parameters")
 
