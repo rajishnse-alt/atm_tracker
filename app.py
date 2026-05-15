@@ -1164,20 +1164,60 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 # ─────────────────────────────────────────────
 # FETCH INTRADAY TICK DATA
 # ─────────────────────────────────────────────
+# NORMALIZE DATE FORMAT
+# ─────────────────────────────────────────────
+def normalize_date(date_str):
+    """Convert various date formats to YYYY-MM-DD"""
+    if not date_str:
+        return None
+
+    # Already in YYYY-MM-DD format
+    if isinstance(date_str, str) and len(date_str) == 10 and date_str[4] == '-' and date_str[7] == '-':
+        return date_str
+
+    # Try parsing common formats
+    formats = [
+        "%Y-%m-%d",      # 2025-01-30
+        "%d-%m-%Y",      # 30-01-2025
+        "%d/%m/%Y",      # 30/01/2025
+        "%Y/%m/%d",      # 2025/01/30
+        "%d %b %Y",      # 30 Jan 2025
+        "%d-%b-%Y",      # 30-Jan-2025
+    ]
+
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(str(date_str), fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    # If all else fails, return as-is
+    return str(date_str)
+
+# ─────────────────────────────────────────────
 # FETCH HISTORICAL CANDLE DATA
 # ─────────────────────────────────────────────
-def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
+def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes, candle_date=None):
     """
     Fetch historical option candles for ATM strikes
     timeframe_minutes: 1, 3, 15
+    candle_date: Date to fetch candles for (YYYY-MM-DD format)
     Returns: Dict with 'ce_candles' and 'pe_candles' for replay
     """
     try:
+        # Normalize expiry date to YYYY-MM-DD format
+        normalized_expiry = normalize_date(expiry_date)
+        normalized_candle_date = normalize_date(candle_date) if candle_date else normalized_expiry
+
+        st.write(f"**Expiry Date:** `{normalized_expiry}`")
+        st.write(f"**Candle Date (for replay):** `{normalized_candle_date}`")
+
         # Step 1: Get current option chain to find ATM strike
         oc_url = UPSTOX_OC_URLS[1]
         oc_params = {
             "instrument_key": INSTRUMENT_KEY[symbol],
-            "expiry_date": expiry_date,
+            "expiry_date": normalized_expiry,
         }
         oc_response = requests.get(oc_url, params=oc_params, headers=upstox_headers(token), timeout=15)
         oc_data = oc_response.json()
@@ -1199,7 +1239,7 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
             return None
 
         # Step 2: Construct option instrument keys for ATM CE and PE
-        exp_date_obj = datetime.strptime(expiry_date, "%Y-%m-%d")
+        exp_date_obj = datetime.strptime(normalized_expiry, "%Y-%m-%d")
         exp_month = exp_date_obj.strftime("%b").upper()  # JAN, FEB, etc.
         exp_year = str(exp_date_obj.year)[-1]  # Last digit of year (5 for 2025)
 
@@ -1210,10 +1250,10 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes):
         st.write(f"  - CE: `{ce_key}`")
         st.write(f"  - PE: `{pe_key}`")
 
-        # Step 3: Fetch historical candles for both CE and PE
+        # Step 3: Fetch historical candles for both CE and PE (for the selected candle_date)
         candle_url = UPSTOX_HISTORICAL_CANDLE
-        ce_url = f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}"
-        pe_url = f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{expiry_date}/{expiry_date}"
+        ce_url = f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{normalized_candle_date}/{normalized_candle_date}"
+        pe_url = f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{normalized_candle_date}/{normalized_candle_date}"
 
         st.write(f"**Step 4:** Fetching Historical Candles...")
         st.write(f"  - CE URL: `{ce_url}`")
@@ -1347,8 +1387,11 @@ def show_replay_page(access_token, vix_info, now):
         st.write(f"**Date:** {replay_date}")
 
     # Fetch and display replay data
+    # Convert replay_date to string format for API calls
+    replay_date_str = replay_date.strftime("%Y-%m-%d") if hasattr(replay_date, 'strftime') else str(replay_date)
+
     try:
-        candle_data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]))
+        candle_data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]), replay_date_str)
 
         if candle_data:
             ce_candles = candle_data.get("ce_candles", [])
