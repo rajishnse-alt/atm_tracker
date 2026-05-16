@@ -923,30 +923,30 @@ def _trade_setup_badge(atm, step):
     """
     Render predefined trade setup showing CE and PE side positions.
 
-    CE Side: ATM+300(B)[1], ATM+200(S)[3], ATM+1000(B)[2]
-    PE Side: ATM-300(B)[1], ATM-200(S)[3], ATM-1000(B)[2]
+    CE Side: ATM+300(B)[1], ATM+500(S)[3], ATM+1300(B)[2]
+    PE Side: ATM-300(B)[1], ATM-500(S)[3], ATM-1300(B)[2]
     """
     # CE side positions
     ce_300 = atm + 300
-    ce_200 = atm + 200
-    ce_1000 = atm + 1000
+    ce_500 = atm + 500
+    ce_1300 = atm + 1300
 
     # PE side positions
     pe_300 = atm - 300
-    pe_200 = atm - 200
-    pe_1000 = atm - 1000
+    pe_500 = atm - 500
+    pe_1300 = atm - 1300
 
     setup_html = (f"<div class='trade-setup-wrap'>"
                   f"<span class='trade-setup-label'>Setup</span>"
                   f"<div class='trade-side trade-ce'>"
                   f"CE: {ce_300}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{ce_200}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{ce_1000}<span class='trade-buy'>(B)</span>[2]"
+                  f"{ce_500}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{ce_1300}<span class='trade-buy'>(B)</span>[2]"
                   f"</div>"
                   f"<div class='trade-side trade-pe'>"
                   f"PE: {pe_300}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{pe_200}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{pe_1000}<span class='trade-buy'>(B)</span>[2]"
+                  f"{pe_500}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{pe_1300}<span class='trade-buy'>(B)</span>[2]"
                   f"</div>"
                   f"</div>")
     return setup_html
