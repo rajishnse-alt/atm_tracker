@@ -134,6 +134,15 @@ st.markdown("""
   .spcl-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .spcl-val-display { font-family: var(--mono); font-size: 13px; font-weight: 600; color: #FFA500; }
 
+  .trade-setup-wrap { display: inline-block; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 8px; font-family: var(--mono); font-size: 10px; }
+  .trade-setup-label { color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; display: block; font-weight: 600; }
+  .trade-side { margin: 3px 0; }
+  .trade-ce { color: #00BFFF; font-weight: 600; }
+  .trade-pe { color: #FF69B4; font-weight: 600; }
+  .trade-buy { color: #00e676; }
+  .trade-sell { color: #ff5252; }
+  .trade-qty { color: #FFD700; font-weight: 600; }
+
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
   .btst-neut { color: #FFA500 !important; font-weight: 700; }
@@ -910,12 +919,45 @@ def _spcl_badge(val, label):
             f"<span class='spcl-val-display'>{val:.2f}</span>"
             f"</div>")
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None):
+def _trade_setup_badge(atm, step):
     """
-    Render PCR badges with OI change information and SPCL VAL.
+    Render predefined trade setup showing CE and PE side positions.
+
+    CE Side: ATM+300(B)[1], ATM+200(S)[3], ATM+1000(B)[2]
+    PE Side: ATM-300(B)[1], ATM-200(S)[3], ATM-1000(B)[2]
+    """
+    # CE side positions
+    ce_300 = atm + 300
+    ce_200 = atm + 200
+    ce_1000 = atm + 1000
+
+    # PE side positions
+    pe_300 = atm - 300
+    pe_200 = atm - 200
+    pe_1000 = atm - 1000
+
+    setup_html = (f"<div class='trade-setup-wrap'>"
+                  f"<span class='trade-setup-label'>Setup</span>"
+                  f"<div class='trade-side trade-ce'>"
+                  f"CE: {ce_300}<span class='trade-buy'>(B)</span>[1] | "
+                  f"{ce_200}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{ce_1000}<span class='trade-buy'>(B)</span>[2]"
+                  f"</div>"
+                  f"<div class='trade-side trade-pe'>"
+                  f"PE: {pe_300}<span class='trade-buy'>(B)</span>[1] | "
+                  f"{pe_200}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{pe_1000}<span class='trade-buy'>(B)</span>[2]"
+                  f"</div>"
+                  f"</div>")
+    return setup_html
+
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None):
+    """
+    Render PCR badges with OI change information, SPCL VAL, and trade setup.
     - PCR OI   : based on total open interest (standard)
     - PCR Δ OI : based on intraday OI additions (fresh writing sentiment)
     - SPCL VAL : Special value indicator (sqrt(CE_LTP + PE_LTP) * π/2, adjusted for VIX)
+    - Trade Setup: Predefined positions (CE/PE sides with strikes and quantities)
     - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
     badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
@@ -928,6 +970,11 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     if spcl_val is not None:
         badges += "<span class='pcr-divider'>│</span>"
         badges += _spcl_badge(spcl_val, "SPCL VAL")
+
+    # Add Trade Setup next to SPCL VAL
+    if atm is not None and step is not None:
+        badges += "<span class='pcr-divider'>│</span>"
+        badges += _trade_setup_badge(atm, step)
 
     html = f"<div class='pcr-row'>{badges}</div>"
 
@@ -1192,7 +1239,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'])}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -1479,7 +1526,7 @@ def show_replay_page(access_token, vix_info, now):
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'])}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
