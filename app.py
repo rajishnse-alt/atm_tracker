@@ -129,6 +129,11 @@ st.markdown("""
   .rrs-table .signal-neut td { background: #1a1500; color: #FFA500 !important; font-weight: 700; }
   .rrs-table .signal-conf td { background: #1a1a00; color: #FFD700 !important; font-weight: 700; }
   .spcl-val { font-size: 20px !important; font-weight: 800 !important; color: #FFA500 !important; letter-spacing: -1px; }
+
+  .spcl-wrap  { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; }
+  .spcl-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .spcl-val-display { font-family: var(--mono); font-size: 13px; font-weight: 600; color: #FFA500; }
+
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
   .btst-neut { color: #FFA500 !important; font-weight: 700; }
@@ -411,6 +416,18 @@ def parse(data, symbol):
     total_pe_oi_chg = sum(max(pe_oi_chg.get(float(s), 0.0), 0.0) for s in pcr_strikes)
     pcr_oi_chg = (total_pe_oi_chg / total_ce_oi_chg) if total_ce_oi_chg > 0 else 0.0
 
+    # ── SPCL VAL Calculation (from PineScript) ─────────────────────────────
+    # base_spcl = (sqrt(CE_LTP + PE_LTP) * π) / 2
+    # spcl_val = (base_spcl + (base_spcl - vix_sqrt)) / 2
+    spcl_val = None
+    ce_atm = ce_map.get(float(atm), 0.0)
+    pe_atm = pe_map.get(float(atm), 0.0)
+    if ce_atm > 0 and pe_atm > 0:
+        base_spcl = (math.sqrt(ce_atm + pe_atm) * math.pi) / 2
+        # SPCL VAL calculation will be completed in compute_rrs_analysis with VIX data
+        # For now store base_spcl for later use
+        spcl_val = base_spcl  # Will be recalculated with VIX in next function
+
     # ── ATM OI Changes (for display) ────────────────────────────────────────
     atm_ce_oi_chg_pct = ce_oi_chg.get(float(atm), 0.0)
     atm_pe_oi_chg_pct = pe_oi_chg.get(float(atm), 0.0)
@@ -428,6 +445,7 @@ def parse(data, symbol):
         total_pe_oi_chg=total_pe_oi_chg, total_ce_oi_chg=total_ce_oi_chg,
         atm_ce_oi_chg_pct=atm_ce_oi_chg_pct,
         atm_pe_oi_chg_pct=atm_pe_oi_chg_pct,
+        spcl_val=spcl_val, ce_atm=ce_atm, pe_atm=pe_atm,
     )
 
 # ─────────────────────────────────────────────
@@ -879,11 +897,25 @@ def _pcr_badge(val, label, show_range_note=False):
             f"{note}"
             f"</div>")
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None):
+def _spcl_badge(val, label):
     """
-    Render PCR badges with OI change information.
+    Render SPCL VAL badge (Special Value from PineScript).
+    SPCL VAL = (sqrt(CE_LTP + PE_LTP) * π / 2) adjusted for VIX
+    """
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return f"<div class='spcl-wrap'><span class='spcl-label'>{label}</span><span class='spcl-val-display'>N/A</span></div>"
+
+    return (f"<div class='spcl-wrap'>"
+            f"<span class='spcl-label'>{label}</span>"
+            f"<span class='spcl-val-display'>{val:.2f}</span>"
+            f"</div>")
+
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None):
+    """
+    Render PCR badges with OI change information and SPCL VAL.
     - PCR OI   : based on total open interest (standard)
     - PCR Δ OI : based on intraday OI additions (fresh writing sentiment)
+    - SPCL VAL : Special value indicator (sqrt(CE_LTP + PE_LTP) * π/2, adjusted for VIX)
     - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
     badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
@@ -891,6 +923,11 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None):
     if pcr_oi_chg is not None and pcr_oi_chg > 0:
         badges += "<span class='pcr-divider'>│</span>"
         badges += _pcr_badge(pcr_oi_chg, "PCR Δ OI")
+
+    # Add SPCL VAL next to PCR
+    if spcl_val is not None:
+        badges += "<span class='pcr-divider'>│</span>"
+        badges += _spcl_badge(spcl_val, "SPCL VAL")
 
     html = f"<div class='pcr-row'>{badges}</div>"
 
@@ -1145,6 +1182,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     pcr_oi_chg = result.get("pcr_oi_chg")
     atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct")
     atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct")
+    spcl_val = analysis.get("spcl_val") if analysis else None
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -1154,7 +1192,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -1210,9 +1248,6 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes, candle_da
         normalized_expiry = normalize_date(expiry_date)
         normalized_candle_date = normalize_date(candle_date) if candle_date else normalized_expiry
 
-        st.write(f"**Expiry Date:** `{normalized_expiry}`")
-        st.write(f"**Candle Date (for replay):** `{normalized_candle_date}`")
-
         # Step 1: Get current option chain to find ATM strike
         oc_url = UPSTOX_OC_URLS[1]
         oc_params = {
@@ -1222,76 +1257,41 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes, candle_da
         oc_response = requests.get(oc_url, params=oc_params, headers=upstox_headers(token), timeout=15)
         oc_data = oc_response.json()
 
-        oc_status = oc_data.get('status', 'unknown')
-        st.write(f"**Step 1:** Option Chain API Response: {oc_status}")
-
-        if oc_status != "success":
-            error_info = oc_data.get('errors', [{}])[0]
-            error_code = error_info.get('errorCode', 'Unknown')
-            error_msg = error_info.get('message', 'No error message')
-            st.error(f"❌ Option chain API failed ({error_code}): {error_msg}")
-            st.write("**Debugging info:**")
-            st.write(f"- Instrument Key: `{INSTRUMENT_KEY[symbol]}`")
-            st.write(f"- Expiry Date: `{normalized_expiry}`")
-            st.write(f"- Full Response: {oc_data}")
-            return None
-
-        if not oc_data.get("data"):
-            st.error("❌ Option chain returned empty data")
-            st.write(f"Full Response: {oc_data}")
+        if oc_data.get("status") != "success" or not oc_data.get("data"):
             return None
 
         # Parse to find ATM strike
         parsed = parse(oc_data.get("data", []), symbol)
         atm_strike = parsed.get("atm")
 
-        st.write(f"**Step 2:** ATM Strike Found: {atm_strike}")
-
         if not atm_strike:
-            st.error("❌ Could not determine ATM strike from option chain")
             return None
 
         # Step 2: Construct option instrument keys for ATM CE and PE
         exp_date_obj = datetime.strptime(normalized_expiry, "%Y-%m-%d")
-        exp_month = exp_date_obj.strftime("%b").upper()  # JAN, FEB, etc.
-        exp_year = str(exp_date_obj.year)[-1]  # Last digit of year (5 for 2025)
+        exp_month = exp_date_obj.strftime("%b").upper()
+        exp_year = str(exp_date_obj.year)[-1]
 
         ce_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}CE"
         pe_key = f"NSE_FO|{symbol}{exp_year}{exp_month}{int(atm_strike)}PE"
 
-        st.write(f"**Step 3:** Built Option Keys:")
-        st.write(f"  - CE: `{ce_key}`")
-        st.write(f"  - PE: `{pe_key}`")
-
-        # Step 3: Fetch historical candles for both CE and PE (for the selected candle_date)
+        # Step 3: Fetch historical candles for both CE and PE
         candle_url = UPSTOX_HISTORICAL_CANDLE
         ce_url = f"{candle_url}/{ce_key}/minutes/{timeframe_minutes}/{normalized_candle_date}/{normalized_candle_date}"
         pe_url = f"{candle_url}/{pe_key}/minutes/{timeframe_minutes}/{normalized_candle_date}/{normalized_candle_date}"
-
-        st.write(f"**Step 4:** Fetching Historical Candles...")
-        st.write(f"  - CE URL: `{ce_url}`")
 
         # Fetch CE candles
         ce_response = requests.get(ce_url, headers=upstox_headers(token), timeout=15)
         ce_data = ce_response.json()
         ce_candles = ce_data.get("data", []) if ce_data.get("status") == "success" else []
 
-        st.write(f"  - CE Response: {ce_data.get('status')} ({len(ce_candles)} candles)")
-
         # Fetch PE candles
         pe_response = requests.get(pe_url, headers=upstox_headers(token), timeout=15)
         pe_data = pe_response.json()
         pe_candles = pe_data.get("data", []) if pe_data.get("status") == "success" else []
 
-        st.write(f"  - PE Response: {pe_data.get('status')} ({len(pe_candles)} candles)")
-
         if not ce_candles and not pe_candles:
-            st.error(f"❌ No candle data returned from Upstox for this date/strike combination")
-            st.write("**Raw responses:**")
-            st.json({"ce_response": ce_data, "pe_response": pe_data})
             return None
-
-        st.success(f"✅ Loaded {len(ce_candles)} CE candles and {len(pe_candles)} PE candles")
 
         return {
             "atm_strike": atm_strike,
@@ -1303,10 +1303,7 @@ def fetch_intraday_data(token, symbol, expiry_date, timeframe_minutes, candle_da
         }
 
     except Exception as e:
-        st.error(f"❌ Error fetching intraday data: {str(e)}")
-        import traceback
-        with st.expander("🔍 Full Error Trace"):
-            st.text(traceback.format_exc())
+        st.error(f"Error fetching replay data: {str(e)}")
         return None
 
 # ─────────────────────────────────────────────
@@ -1392,13 +1389,6 @@ def show_replay_page(access_token, vix_info, now):
 
     st.divider()
 
-    # Debug: Show what we're requesting
-    with st.expander("🔧 Request Parameters"):
-        st.write(f"**Symbol:** {symbol}")
-        st.write(f"**Expiry:** {selected_expiry}")
-        st.write(f"**Timeframe:** {timeframe} ({int(timeframe.split('-')[0])} minutes)")
-        st.write(f"**Date:** {replay_date}")
-
     # Fetch and display replay data
     # Convert replay_date to string format for API calls
     replay_date_str = replay_date.strftime("%Y-%m-%d") if hasattr(replay_date, 'strftime') else str(replay_date)
@@ -1478,6 +1468,7 @@ def show_replay_page(access_token, vix_info, now):
             pcr_oi_chg = result.get("pcr_oi_chg")
             atm_ce_oi_chg = result.get("atm_ce_oi_chg_pct", 0)
             atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct", 0)
+            spcl_val = result.get("spcl_val")  # May be None in replay mode
 
             st.markdown(
                 f"<div class='inst-card'>"
@@ -1488,7 +1479,7 @@ def show_replay_page(access_token, vix_info, now):
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val)}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
@@ -1497,9 +1488,6 @@ def show_replay_page(access_token, vix_info, now):
 
     except Exception as e:
         st.error(f"Replay error: {str(e)}")
-        import traceback
-        with st.expander("Debug Info"):
-            st.text(traceback.format_exc())
 
 # ─────────────────────────────────────────────
 # SETUP GUIDE
