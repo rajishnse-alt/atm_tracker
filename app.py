@@ -144,6 +144,14 @@ st.markdown("""
   .trade-buy { color: #00e676; }
   .trade-sell { color: #ff5252; }
   .trade-qty { color: #FFD700; font-weight: 600; }
+  .strikes-display-wrap { display: inline-flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; }
+  .strikes-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .strikes-side { font-family: var(--mono); font-size: 11px; }
+  .strikes-ce { color: #00BFFF; }
+  .strikes-pe { color: #FF69B4; }
+  .strike-item { display: inline-block; margin-right: 4px; }
+  .strike-val { font-weight: 600; }
+  .strike-valid { background: rgba(0, 230, 118, 0.2); padding: 1px 3px; border-radius: 2px; border: 1px solid rgba(0, 230, 118, 0.4); }
 
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
@@ -925,9 +933,49 @@ def _spcl_badge(val, label, bullish=None):
             f"<span class='spcl-val-display {color_class}'>{val:.2f}</span>"
             f"</div>")
 
-def _trade_setup_badge(atm, step):
+def _strikes_display(atm, spcl_val=None):
+    """
+    Display CE and PE side strikes next to SPCL VAL.
+    Highlights strikes that are <= SPCL VAL.
+
+    CE Strikes: ATM+300, ATM+500, ATM+1300
+    PE Strikes: ATM-300, ATM-500, ATM-1300
+    """
+    # CE side positions
+    ce_300 = atm + 300
+    ce_500 = atm + 500
+    ce_1300 = atm + 1300
+
+    # PE side positions
+    pe_300 = atm - 300
+    pe_500 = atm - 500
+    pe_1300 = atm - 1300
+
+    # Helper function to format strike with highlighting
+    def format_strike_item(strike, spcl_val):
+        if spcl_val is not None and not math.isnan(spcl_val) and strike <= spcl_val:
+            return f"<span class='strike-item strike-valid'><span class='strike-val'>{strike}</span></span>"
+        return f"<span class='strike-item'><span class='strike-val'>{strike}</span></span>"
+
+    ce_300_fmt = format_strike_item(ce_300, spcl_val)
+    ce_500_fmt = format_strike_item(ce_500, spcl_val)
+    ce_1300_fmt = format_strike_item(ce_1300, spcl_val)
+    pe_300_fmt = format_strike_item(pe_300, spcl_val)
+    pe_500_fmt = format_strike_item(pe_500, spcl_val)
+    pe_1300_fmt = format_strike_item(pe_1300, spcl_val)
+
+    strikes_html = (f"<div class='strikes-display-wrap'>"
+                    f"<span class='strikes-label'>Strikes</span>"
+                    f"<span class='strikes-side strikes-ce'>CE: {ce_300_fmt} {ce_500_fmt} {ce_1300_fmt}</span>"
+                    f"<span style='color:var(--border2);'>│</span>"
+                    f"<span class='strikes-side strikes-pe'>PE: {pe_300_fmt} {pe_500_fmt} {pe_1300_fmt}</span>"
+                    f"</div>")
+    return strikes_html
+
+def _trade_setup_badge(atm, step, spcl_val=None):
     """
     Render predefined trade setup showing CE and PE side positions.
+    Highlights strikes that are <= SPCL VAL.
 
     CE Side: ATM+300(B)[1], ATM+500(S)[3], ATM+1300(B)[2]
     PE Side: ATM-300(B)[1], ATM-500(S)[3], ATM-1300(B)[2]
@@ -942,17 +990,30 @@ def _trade_setup_badge(atm, step):
     pe_500 = atm - 500
     pe_1300 = atm - 1300
 
+    # Helper function to apply highlighting if strike <= spcl_val
+    def format_strike(strike, spcl_val):
+        if spcl_val is not None and not math.isnan(spcl_val) and strike <= spcl_val:
+            return f"<span class='trade-strike trade-strike-valid'>{strike}</span>"
+        return f"<span class='trade-strike'>{strike}</span>"
+
+    ce_300_fmt = format_strike(ce_300, spcl_val)
+    ce_500_fmt = format_strike(ce_500, spcl_val)
+    ce_1300_fmt = format_strike(ce_1300, spcl_val)
+    pe_300_fmt = format_strike(pe_300, spcl_val)
+    pe_500_fmt = format_strike(pe_500, spcl_val)
+    pe_1300_fmt = format_strike(pe_1300, spcl_val)
+
     setup_html = (f"<div class='trade-setup-wrap'>"
                   f"<span class='trade-setup-label'>Setup</span>"
                   f"<div class='trade-side trade-ce'>"
-                  f"CE: {ce_300}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{ce_500}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{ce_1300}<span class='trade-buy'>(B)</span>[2]"
+                  f"CE: {ce_300_fmt}<span class='trade-buy'>(B)</span>[1] | "
+                  f"{ce_500_fmt}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{ce_1300_fmt}<span class='trade-buy'>(B)</span>[2]"
                   f"</div>"
                   f"<div class='trade-side trade-pe'>"
-                  f"PE: {pe_300}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{pe_500}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{pe_1300}<span class='trade-buy'>(B)</span>[2]"
+                  f"PE: {pe_300_fmt}<span class='trade-buy'>(B)</span>[1] | "
+                  f"{pe_500_fmt}<span class='trade-sell'>(S)</span>[3] | "
+                  f"{pe_1300_fmt}<span class='trade-buy'>(B)</span>[2]"
                   f"</div>"
                   f"</div>")
     return setup_html
@@ -978,10 +1039,10 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         badges += "<span class='pcr-divider'>│</span>"
         badges += _spcl_badge(spcl_val, "SPCL VAL", bullish=bullish)
 
-    # Add Trade Setup next to SPCL VAL
-    if atm is not None and step is not None:
+    # Add Strikes display next to SPCL VAL (showing CE/PE sides)
+    if atm is not None:
         badges += "<span class='pcr-divider'>│</span>"
-        badges += _trade_setup_badge(atm, step)
+        badges += _strikes_display(atm, spcl_val)
 
     html = f"<div class='pcr-row'>{badges}</div>"
 
