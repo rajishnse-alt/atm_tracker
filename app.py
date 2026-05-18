@@ -944,42 +944,49 @@ def _spcl_badge(val, label, bullish=None):
 
 def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
     """
-    Display CE and PE strikes from COMPLETE OPTION CHAIN within range: (SPCL VAL - 5) to SPCL VAL.
-    Scans all available strikes in the option chain and filters by SPCL VAL range.
-    Range: strike >= (SPCL VAL - 5) AND strike <= SPCL VAL
+    Display CE and PE strikes from COMPLETE OPTION CHAIN within ATM ±20 range.
+    Scans all available strikes in the option chain and filters by strike proximity to ATM.
+    Range: (ATM - 20) <= strike <= (ATM + 20)
     """
-    if spcl_val is None or math.isnan(spcl_val):
+    if atm is None:
         return ""
 
     # If we don't have the complete chain data, return empty
     if not ce_map and not pe_map:
         return ""
 
-    # Calculate range: SPCL VAL - 5 to SPCL VAL
-    lower_bound = spcl_val - 5
-    upper_bound = spcl_val
+    # Calculate range: ATM ±20
+    lower_bound = atm - 20
+    upper_bound = atm + 20
 
     # Get all strikes from complete option chain
     all_ce_strikes = sorted([float(s) for s in ce_map.keys()]) if ce_map else []
     all_pe_strikes = sorted([float(s) for s in pe_map.keys()]) if pe_map else []
 
-    # Filter strikes within range (SPCL VAL - 5) <= strike <= SPCL VAL
+    # Filter strikes within range (ATM - 20) <= strike <= (ATM + 20)
     valid_ce = [s for s in all_ce_strikes if lower_bound <= s <= upper_bound]
     valid_pe = [s for s in all_pe_strikes if lower_bound <= s <= upper_bound]
 
-    # If no valid strikes, don't show the box
-    if not valid_ce and not valid_pe:
-        return ""
-
-    ce_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_ce])
-    pe_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_pe])
-
+    # Create display for valid strikes
     html = f"<div class='valid-strikes-wrap'>"
-    html += f"<span class='valid-strikes-label'>Valid Strikes ({lower_bound:.1f}~{upper_bound:.1f})</span>"
+    html += f"<span class='valid-strikes-label'>Chain Scan (ATM±20: {lower_bound:.0f}~{upper_bound:.0f})</span>"
+
     if valid_ce:
+        ce_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_ce])
         html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: {ce_str}</div>"
+    else:
+        html += f"<div class='valid-strikes-side valid-strikes-ce' style='color:#999;'>CE: None in range</div>"
+
     if valid_pe:
+        pe_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_pe])
         html += f"<div class='valid-strikes-side valid-strikes-pe'>PE: {pe_str}</div>"
+    else:
+        html += f"<div class='valid-strikes-side valid-strikes-pe' style='color:#999;'>PE: None in range</div>"
+
+    # Show total available strikes
+    html += f"<div style='margin-top:3px;font-size:9px;color:#666;'>"
+    html += f"Total Available: CE({len(all_ce_strikes)}) PE({len(all_pe_strikes)})"
+    html += f"</div>"
     html += f"</div>"
 
     return html
