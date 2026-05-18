@@ -942,11 +942,11 @@ def _spcl_badge(val, label, bullish=None):
             f"<span class='spcl-val-display {color_class}'>{val:.2f}</span>"
             f"</div>")
 
-def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
+def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None, step=None):
     """
     Display the BEST OTM CE and PE strikes where LTP (premium) <= SPCL VAL.
-    CE: ATM to ATM+20 (OTM calls) - show strike with highest LTP <= SPCL VAL
-    PE: ATM to ATM-20 (OTM puts) - show strike with highest LTP <= SPCL VAL
+    CE: Next 20 OTM strikes above ATM - show strike with highest LTP <= SPCL VAL
+    PE: 20 OTM strikes below ATM - show strike with highest LTP <= SPCL VAL
     Shows the single best strike with most premium within affordable range.
     """
     if atm is None or spcl_val is None or math.isnan(spcl_val):
@@ -956,38 +956,38 @@ def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
     if (not ce_map or len(ce_map) == 0) and (not pe_map or len(pe_map) == 0):
         return ""
 
-    # CE: ATM to ATM+20 (OTM calls going up)
-    ce_lower = atm
-    ce_upper = atm + 20
+    # Get sorted strike lists from the option chain
+    ce_strikes = sorted([float(s) for s in ce_map.keys()])
+    pe_strikes = sorted([float(s) for s in pe_map.keys()])
 
-    # PE: ATM to ATM-20 (OTM puts going down)
-    pe_lower = atm - 20
-    pe_upper = atm
+    # Find ATM index and get next 20 strikes for each side
+    ce_otm_strikes = [s for s in ce_strikes if s > atm][:20]  # Next 20 CE strikes above ATM
+    pe_otm_strikes = [s for s in pe_strikes if s < atm][-20:]  # Last 20 PE strikes below ATM
 
-    # Find BEST CE strike in range with LTP <= SPCL VAL (highest LTP)
+    # Find BEST CE strike in OTM range with LTP <= SPCL VAL (highest LTP)
     best_ce = None
     best_ce_ltp = -1
     if ce_map:
-        for strike, ltp in ce_map.items():
-            strike_float = float(strike)
+        for strike in ce_otm_strikes:
+            ltp = ce_map.get(str(strike)) or ce_map.get(strike)
             ltp_float = float(ltp) if ltp else 0
-            # Include strike if it's in OTM range AND has LTP <= SPCL VAL
-            if ce_lower <= strike_float <= ce_upper and ltp_float > 0 and ltp_float <= spcl_val:
+            # Include strike if it has valid LTP <= SPCL VAL
+            if ltp_float > 0 and ltp_float <= spcl_val:
                 if ltp_float > best_ce_ltp:
-                    best_ce = strike_float
+                    best_ce = strike
                     best_ce_ltp = ltp_float
 
-    # Find BEST PE strike in range with LTP <= SPCL VAL (highest LTP)
+    # Find BEST PE strike in OTM range with LTP <= SPCL VAL (highest LTP)
     best_pe = None
     best_pe_ltp = -1
     if pe_map:
-        for strike, ltp in pe_map.items():
-            strike_float = float(strike)
+        for strike in pe_otm_strikes:
+            ltp = pe_map.get(str(strike)) or pe_map.get(strike)
             ltp_float = float(ltp) if ltp else 0
-            # Include strike if it's in OTM range AND has LTP <= SPCL VAL
-            if pe_lower <= strike_float <= pe_upper and ltp_float > 0 and ltp_float <= spcl_val:
+            # Include strike if it has valid LTP <= SPCL VAL
+            if ltp_float > 0 and ltp_float <= spcl_val:
                 if ltp_float > best_pe_ltp:
-                    best_pe = strike_float
+                    best_pe = strike
                     best_pe_ltp = ltp_float
 
     # Create display for best strikes
@@ -1124,8 +1124,8 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
 
     html = f"<div class='pcr-row'>{badges}</div>"
 
-    # Add Valid Strikes summary from complete option chain (strikes within SPCL VAL ±5 range)
-    valid_strikes = _valid_strikes_summary(atm, spcl_val, ce_map, pe_map) if atm is not None else ""
+    # Add Valid Strikes summary from complete option chain (strikes within SPCL VAL range)
+    valid_strikes = _valid_strikes_summary(atm, spcl_val, ce_map, pe_map, step) if atm is not None else ""
     if valid_strikes:
         html += f"<div class='pcr-row' style='margin-top:5px;'>{valid_strikes}</div>"
 
