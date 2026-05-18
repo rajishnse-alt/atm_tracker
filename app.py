@@ -942,42 +942,40 @@ def _spcl_badge(val, label, bullish=None):
             f"<span class='spcl-val-display {color_class}'>{val:.2f}</span>"
             f"</div>")
 
-def _valid_strikes_summary(atm, spcl_val=None):
+def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
     """
-    Display only CE and PE strikes within range: (SPCL VAL - 5) to SPCL VAL.
-    Shows which strikes are actionable based on SPCL VAL threshold.
+    Display CE and PE strikes from COMPLETE OPTION CHAIN within range: (SPCL VAL - 5) to SPCL VAL.
+    Scans all available strikes in the option chain and filters by SPCL VAL range.
     Range: strike >= (SPCL VAL - 5) AND strike <= SPCL VAL
     """
     if spcl_val is None or math.isnan(spcl_val):
         return ""
 
-    # CE side positions
-    ce_300 = atm + 300
-    ce_500 = atm + 500
-    ce_1300 = atm + 1300
-
-    # PE side positions
-    pe_300 = atm - 300
-    pe_500 = atm - 500
-    pe_1300 = atm - 1300
+    # If we don't have the complete chain data, return empty
+    if not ce_map and not pe_map:
+        return ""
 
     # Calculate range: SPCL VAL - 5 to SPCL VAL
     lower_bound = spcl_val - 5
     upper_bound = spcl_val
 
+    # Get all strikes from complete option chain
+    all_ce_strikes = sorted([float(s) for s in ce_map.keys()]) if ce_map else []
+    all_pe_strikes = sorted([float(s) for s in pe_map.keys()]) if pe_map else []
+
     # Filter strikes within range (SPCL VAL - 5) <= strike <= SPCL VAL
-    valid_ce = [s for s in [ce_300, ce_500, ce_1300] if lower_bound <= s <= upper_bound]
-    valid_pe = [s for s in [pe_300, pe_500, pe_1300] if lower_bound <= s <= upper_bound]
+    valid_ce = [s for s in all_ce_strikes if lower_bound <= s <= upper_bound]
+    valid_pe = [s for s in all_pe_strikes if lower_bound <= s <= upper_bound]
 
     # If no valid strikes, don't show the box
     if not valid_ce and not valid_pe:
         return ""
 
-    ce_str = " ".join([f"<span class='valid-strike-item'>{s}</span>" for s in sorted(valid_ce)])
-    pe_str = " ".join([f"<span class='valid-strike-item'>{s}</span>" for s in sorted(valid_pe)])
+    ce_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_ce])
+    pe_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_pe])
 
     html = f"<div class='valid-strikes-wrap'>"
-    html += f"<span class='valid-strikes-label'>Valid Strikes ({spcl_val-5:.1f}~{spcl_val:.1f})</span>"
+    html += f"<span class='valid-strikes-label'>Valid Strikes ({lower_bound:.1f}~{upper_bound:.1f})</span>"
     if valid_ce:
         html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: {ce_str}</div>"
     if valid_pe:
@@ -1073,7 +1071,7 @@ def _trade_setup_badge(atm, step, spcl_val=None):
                   f"</div>")
     return setup_html
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None):
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None):
     """
     Render PCR badges with OI change information, SPCL VAL, and trade setup.
     - PCR OI   : based on total open interest (standard)
@@ -1081,7 +1079,7 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     - SPCL VAL : Special value indicator (sqrt(CE_LTP + PE_LTP) * π/2, adjusted for VIX)
                Color: Green if bullish (Bu), Dark Orange if bearish (Be)
     - Trade Setup: Predefined positions (CE/PE sides with strikes and quantities)
-    - Valid Strikes: Shows only strikes that are <= SPCL VAL
+    - Valid Strikes: Shows strikes from complete option chain within (SPCL VAL - 5) to SPCL VAL range
     - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
     badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
@@ -1102,8 +1100,8 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
 
     html = f"<div class='pcr-row'>{badges}</div>"
 
-    # Add Valid Strikes summary (strikes <= SPCL VAL)
-    valid_strikes = _valid_strikes_summary(atm, spcl_val) if atm is not None else ""
+    # Add Valid Strikes summary from complete option chain (strikes within SPCL VAL ±5 range)
+    valid_strikes = _valid_strikes_summary(atm, spcl_val, ce_map, pe_map) if atm is not None else ""
     if valid_strikes:
         html += f"<div class='pcr-row' style='margin-top:5px;'>{valid_strikes}</div>"
 
@@ -1360,6 +1358,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct")
     spcl_val = analysis.get("spcl_val") if analysis else None
     bullish = not result.get("bearish", False)  # Invert bearish to get bullish
+    ce_map = result.get("ce_map")  # Complete CE strikes map
+    pe_map = result.get("pe_map")  # Complete PE strikes map
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -1369,7 +1369,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -1647,6 +1647,8 @@ def show_replay_page(access_token, vix_info, now):
             atm_pe_oi_chg = result.get("atm_pe_oi_chg_pct", 0)
             spcl_val = result.get("spcl_val")  # May be None in replay mode
             bullish = not result.get("bearish", False)  # Invert bearish to get bullish
+            ce_map = result.get("ce_map")  # Complete CE strikes map
+            pe_map = result.get("pe_map")  # Complete PE strikes map
 
             st.markdown(
                 f"<div class='inst-card'>"
@@ -1657,7 +1659,7 @@ def show_replay_page(access_token, vix_info, now):
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map)}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
