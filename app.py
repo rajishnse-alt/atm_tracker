@@ -155,12 +155,12 @@ st.markdown("""
   .strike-val { font-weight: 600; }
   .strike-valid { background: rgba(0, 230, 118, 0.35); padding: 2px 4px; border-radius: 3px; border: 1px solid #00e676; color: #00e676; font-weight: 700; }
 
-  .valid-strikes-wrap { display: inline-block; background: var(--surface); border: 2px solid #00e676; border-radius: 6px; padding: 5px 8px; font-family: var(--mono); font-size: 10px; margin-left: 8px; }
-  .valid-strikes-label { color: #00e676; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; display: block; font-weight: 700; font-size: 9px; }
-  .valid-strikes-side { margin: 2px 0; font-weight: 600; }
-  .valid-strikes-ce { color: #00BFFF; }
-  .valid-strikes-pe { color: #FF69B4; }
-  .valid-strike-item { display: inline-block; margin-right: 6px; padding: 2px 4px; background: rgba(0, 230, 118, 0.2); border: 1px solid #00e676; border-radius: 3px; color: #00e676; font-weight: 600; }
+  .valid-strikes-wrap { display: inline-flex; flex-direction: column; align-items: flex-start; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 4px 8px; font-family: var(--mono); font-size: 10px; margin-left: 4px; gap: 2px; }
+  .valid-strikes-label { color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-weight: 600; font-size: 9px; }
+  .valid-strikes-side { font-weight: 600; font-size: 10px; white-space: nowrap; }
+  .valid-strikes-ce { color: #2979ff; }
+  .valid-strikes-pe { color: #ab47bc; }
+  .valid-strike-item { display: inline-block; padding: 2px 4px; background: rgba(0, 230, 118, 0.2); border: 1px solid #00e676; border-radius: 3px; color: #00e676; font-weight: 600; }
 
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
@@ -1122,12 +1122,14 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         badges += "<span class='pcr-divider'>│</span>"
         badges += _trade_setup_badge(atm, step, spcl_val)
 
-    html = f"<div class='pcr-row'>{badges}</div>"
+    html = f"<div class='pcr-row'>{badges}"
 
-    # Add Valid Strikes summary from complete option chain (strikes within SPCL VAL range)
+    # Add Valid Strikes summary next to Setup on the same row
     valid_strikes = _valid_strikes_summary(atm, spcl_val, ce_map, pe_map, step) if atm is not None else ""
     if valid_strikes:
-        html += f"<div class='pcr-row' style='margin-top:5px;'>{valid_strikes}</div>"
+        html += f"<span class='pcr-divider'>│</span>{valid_strikes}"
+
+    html += "</div>"
 
     # Add OI Change row showing ATM Calls and Puts direction
     if atm_ce_oi_chg is not None and atm_pe_oi_chg is not None:
