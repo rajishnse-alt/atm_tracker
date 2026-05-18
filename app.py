@@ -956,39 +956,43 @@ def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None, step=No
     if (not ce_map or len(ce_map) == 0) and (not pe_map or len(pe_map) == 0):
         return ""
 
-    # Get sorted strike lists from the option chain
-    ce_strikes = sorted([float(s) for s in ce_map.keys()]) if ce_map else []
-    pe_strikes = sorted([float(s) for s in pe_map.keys()]) if pe_map else []
-
-    # Find ATM index and get next 20 strikes for each side
-    ce_otm_strikes = [s for s in ce_strikes if s > atm][:20]  # Next 20 CE strikes above ATM
-    pe_otm_strikes = [s for s in pe_strikes if s < atm][-20:]  # Last 20 PE strikes below ATM
-
     # Find BEST CE strike in OTM range with LTP <= SPCL VAL (highest LTP)
+    # CE: next 20 strikes ABOVE ATM
     best_ce = None
     best_ce_ltp = -1
     if ce_map:
+        ce_candidates = []
         for strike, ltp in ce_map.items():
             strike_float = float(strike)
             ltp_float = float(ltp) if ltp else 0
-            # Check if strike is in CE OTM range and has valid LTP <= SPCL VAL
-            if strike_float in ce_otm_strikes and ltp_float > 0 and ltp_float <= spcl_val:
-                if ltp_float > best_ce_ltp:
-                    best_ce = strike_float
-                    best_ce_ltp = ltp_float
+            # Get all CE strikes above ATM with valid LTP
+            if strike_float > atm and ltp_float > 0 and ltp_float <= spcl_val:
+                ce_candidates.append((strike_float, ltp_float))
+        # Sort by strike price ascending, take first 20, then find one with highest LTP
+        ce_candidates.sort(key=lambda x: x[0])
+        for strike, ltp in ce_candidates[:20]:
+            if ltp > best_ce_ltp:
+                best_ce = strike
+                best_ce_ltp = ltp
 
     # Find BEST PE strike in OTM range with LTP <= SPCL VAL (highest LTP)
+    # PE: last 20 strikes BELOW ATM (closest to ATM going down)
     best_pe = None
     best_pe_ltp = -1
     if pe_map:
+        pe_candidates = []
         for strike, ltp in pe_map.items():
             strike_float = float(strike)
             ltp_float = float(ltp) if ltp else 0
-            # Check if strike is in PE OTM range and has valid LTP <= SPCL VAL
-            if strike_float in pe_otm_strikes and ltp_float > 0 and ltp_float <= spcl_val:
-                if ltp_float > best_pe_ltp:
-                    best_pe = strike_float
-                    best_pe_ltp = ltp_float
+            # Get all PE strikes below ATM with valid LTP
+            if strike_float < atm and ltp_float > 0 and ltp_float <= spcl_val:
+                pe_candidates.append((strike_float, ltp_float))
+        # Sort by strike price descending (closest to ATM first), take first 20, then find one with highest LTP
+        pe_candidates.sort(key=lambda x: x[0], reverse=True)
+        for strike, ltp in pe_candidates[:20]:
+            if ltp > best_pe_ltp:
+                best_pe = strike
+                best_pe_ltp = ltp
 
     # Create display for best strikes
     html = f"<div class='valid-strikes-wrap'>"
