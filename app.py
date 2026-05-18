@@ -944,49 +944,60 @@ def _spcl_badge(val, label, bullish=None):
 
 def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
     """
-    Display CE and PE strikes from COMPLETE OPTION CHAIN within ATM ±20 range.
-    Scans all available strikes in the option chain and filters by strike proximity to ATM.
-    Range: (ATM - 20) <= strike <= (ATM + 20)
+    Display the BEST OTM CE and PE strikes where LTP (premium) <= SPCL VAL.
+    CE: ATM to ATM+20 (OTM calls) - show strike with highest LTP <= SPCL VAL
+    PE: ATM to ATM-20 (OTM puts) - show strike with highest LTP <= SPCL VAL
+    Shows the single best strike with most premium within affordable range.
     """
-    if atm is None:
+    if atm is None or spcl_val is None or math.isnan(spcl_val):
         return ""
 
     # If we don't have the complete chain data, return empty
     if not ce_map and not pe_map:
         return ""
 
-    # Calculate range: ATM ±20
-    lower_bound = atm - 20
-    upper_bound = atm + 20
+    # CE: ATM to ATM+20 (OTM calls going up)
+    ce_lower = atm
+    ce_upper = atm + 20
 
-    # Get all strikes from complete option chain
-    all_ce_strikes = sorted([float(s) for s in ce_map.keys()]) if ce_map else []
-    all_pe_strikes = sorted([float(s) for s in pe_map.keys()]) if pe_map else []
+    # PE: ATM to ATM-20 (OTM puts going down)
+    pe_lower = atm - 20
+    pe_upper = atm
 
-    # Filter strikes within range (ATM - 20) <= strike <= (ATM + 20)
-    valid_ce = [s for s in all_ce_strikes if lower_bound <= s <= upper_bound]
-    valid_pe = [s for s in all_pe_strikes if lower_bound <= s <= upper_bound]
+    # Find BEST CE strike in range with LTP <= SPCL VAL (highest LTP)
+    best_ce = None
+    best_ce_ltp = -1
+    for strike in [float(s) for s in ce_map.keys()]:
+        if ce_lower <= strike <= ce_upper:
+            ltp = ce_map.get(strike, 0)
+            if ltp is not None and float(ltp) <= spcl_val and float(ltp) > best_ce_ltp:
+                best_ce = strike
+                best_ce_ltp = float(ltp)
 
-    # Create display for valid strikes
+    # Find BEST PE strike in range with LTP <= SPCL VAL (highest LTP)
+    best_pe = None
+    best_pe_ltp = -1
+    for strike in [float(s) for s in pe_map.keys()]:
+        if pe_lower <= strike <= pe_upper:
+            ltp = pe_map.get(strike, 0)
+            if ltp is not None and float(ltp) <= spcl_val and float(ltp) > best_pe_ltp:
+                best_pe = strike
+                best_pe_ltp = float(ltp)
+
+    # Create display for best strikes
     html = f"<div class='valid-strikes-wrap'>"
-    html += f"<span class='valid-strikes-label'>Chain Scan (ATM±20: {lower_bound:.0f}~{upper_bound:.0f})</span>"
+    html += f"<span class='valid-strikes-label'>Best OTM Strike (LTP ≤ SPCL VAL: {spcl_val:.2f})</span>"
 
-    if valid_ce:
-        ce_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_ce])
-        html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: {ce_str}</div>"
+    if best_ce is not None and best_ce_ltp > 0:
+        html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: <span class='valid-strike-item'>{int(best_ce)}({best_ce_ltp:.2f})</span></div>"
     else:
-        html += f"<div class='valid-strikes-side valid-strikes-ce' style='color:#999;'>CE: None in range</div>"
+        html += f"<div class='valid-strikes-side valid-strikes-ce' style='color:#999;'>CE: None with LTP ≤ {spcl_val:.2f}</div>"
 
-    if valid_pe:
-        pe_str = " ".join([f"<span class='valid-strike-item'>{int(s)}</span>" for s in valid_pe])
-        html += f"<div class='valid-strikes-side valid-strikes-pe'>PE: {pe_str}</div>"
+    if best_pe is not None and best_pe_ltp > 0:
+        html += f"<div class='valid-strikes-side valid-strikes-pe'>PE: <span class='valid-strike-item'>{int(best_pe)}({best_pe_ltp:.2f})</span></div>"
     else:
-        html += f"<div class='valid-strikes-side valid-strikes-pe' style='color:#999;'>PE: None in range</div>"
+        html += f"<div class='valid-strikes-side valid-strikes-pe' style='color:#999;'>PE: None with LTP ≤ {spcl_val:.2f}</div>"
 
-    # Show total available strikes
-    html += f"<div style='margin-top:3px;font-size:9px;color:#666;'>"
-    html += f"Total Available: CE({len(all_ce_strikes)}) PE({len(all_pe_strikes)})"
-    html += f"</div>"
     html += f"</div>"
 
     return html
