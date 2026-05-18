@@ -146,7 +146,6 @@ st.markdown("""
   .trade-qty { color: #FFD700; font-weight: 600; }
   .trade-strike { font-weight: 600; }
   .trade-strike-valid { background: rgba(0, 230, 118, 0.35); padding: 2px 4px; border-radius: 3px; border: 1px solid #00e676; color: #00e676; font-weight: 700; }
-  .trade-strike-valid::before { content: '✓ '; }
   .strikes-display-wrap { display: inline-flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; }
   .strikes-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .strikes-side { font-family: var(--mono); font-size: 11px; }
@@ -155,7 +154,6 @@ st.markdown("""
   .strike-item { display: inline-block; margin-right: 6px; }
   .strike-val { font-weight: 600; }
   .strike-valid { background: rgba(0, 230, 118, 0.35); padding: 2px 4px; border-radius: 3px; border: 1px solid #00e676; color: #00e676; font-weight: 700; }
-  .strike-valid::before { content: '✓ '; }
 
   .valid-strikes-wrap { display: inline-block; background: var(--surface); border: 2px solid #00e676; border-radius: 6px; padding: 5px 8px; font-family: var(--mono); font-size: 10px; margin-left: 8px; }
   .valid-strikes-label { color: #00e676; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; display: block; font-weight: 700; font-size: 9px; }
@@ -946,8 +944,9 @@ def _spcl_badge(val, label, bullish=None):
 
 def _valid_strikes_summary(atm, spcl_val=None):
     """
-    Display only CE and PE strikes that are <= SPCL VAL.
+    Display only CE and PE strikes within range: (SPCL VAL - 5) to SPCL VAL.
     Shows which strikes are actionable based on SPCL VAL threshold.
+    Range: strike >= (SPCL VAL - 5) AND strike <= SPCL VAL
     """
     if spcl_val is None or math.isnan(spcl_val):
         return ""
@@ -962,9 +961,13 @@ def _valid_strikes_summary(atm, spcl_val=None):
     pe_500 = atm - 500
     pe_1300 = atm - 1300
 
-    # Filter strikes <= spcl_val
-    valid_ce = [s for s in [ce_300, ce_500, ce_1300] if s <= spcl_val]
-    valid_pe = [s for s in [pe_300, pe_500, pe_1300] if s <= spcl_val]
+    # Calculate range: SPCL VAL - 5 to SPCL VAL
+    lower_bound = spcl_val - 5
+    upper_bound = spcl_val
+
+    # Filter strikes within range (SPCL VAL - 5) <= strike <= SPCL VAL
+    valid_ce = [s for s in [ce_300, ce_500, ce_1300] if lower_bound <= s <= upper_bound]
+    valid_pe = [s for s in [pe_300, pe_500, pe_1300] if lower_bound <= s <= upper_bound]
 
     # If no valid strikes, don't show the box
     if not valid_ce and not valid_pe:
@@ -974,7 +977,7 @@ def _valid_strikes_summary(atm, spcl_val=None):
     pe_str = " ".join([f"<span class='valid-strike-item'>{s}</span>" for s in sorted(valid_pe)])
 
     html = f"<div class='valid-strikes-wrap'>"
-    html += f"<span class='valid-strikes-label'>✓ Valid Strikes (≤ SPCL)</span>"
+    html += f"<span class='valid-strikes-label'>Valid Strikes ({spcl_val-5:.1f}~{spcl_val:.1f})</span>"
     if valid_ce:
         html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: {ce_str}</div>"
     if valid_pe:
@@ -1040,11 +1043,14 @@ def _trade_setup_badge(atm, step, spcl_val=None):
     pe_500 = atm - 500
     pe_1300 = atm - 1300
 
-    # Helper function to format strike with highlighting for <= spcl_val
+    # Helper function to format strike with highlighting for range (SPCL VAL - 5) to SPCL VAL
     def format_setup_item(strike, action, qty, spcl_val):
         strike_html = f"<span class='trade-strike'>{strike}</span>"
-        if spcl_val is not None and not math.isnan(spcl_val) and strike <= spcl_val:
-            strike_html = f"<span class='trade-strike trade-strike-valid'>{strike}</span>"
+        if spcl_val is not None and not math.isnan(spcl_val):
+            lower_bound = spcl_val - 5
+            upper_bound = spcl_val
+            if lower_bound <= strike <= upper_bound:
+                strike_html = f"<span class='trade-strike trade-strike-valid'>{strike}</span>"
 
         action_class = "trade-buy" if action == "B" else "trade-sell"
         return f"{strike_html}<span class='{action_class}'>({action})</span>[{qty}]"
