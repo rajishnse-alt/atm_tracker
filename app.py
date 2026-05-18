@@ -953,7 +953,7 @@ def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
         return ""
 
     # If we don't have the complete chain data, return empty
-    if not ce_map and not pe_map:
+    if (not ce_map or len(ce_map) == 0) and (not pe_map or len(pe_map) == 0):
         return ""
 
     # CE: ATM to ATM+20 (OTM calls going up)
@@ -967,22 +967,28 @@ def _valid_strikes_summary(atm, spcl_val=None, ce_map=None, pe_map=None):
     # Find BEST CE strike in range with LTP <= SPCL VAL (highest LTP)
     best_ce = None
     best_ce_ltp = -1
-    for strike in [float(s) for s in ce_map.keys()]:
-        if ce_lower <= strike <= ce_upper:
-            ltp = ce_map.get(strike, 0)
-            if ltp is not None and float(ltp) <= spcl_val and float(ltp) > best_ce_ltp:
-                best_ce = strike
-                best_ce_ltp = float(ltp)
+    if ce_map:
+        for strike, ltp in ce_map.items():
+            strike_float = float(strike)
+            ltp_float = float(ltp) if ltp else 0
+            # Include strike if it's in OTM range AND has LTP <= SPCL VAL
+            if ce_lower <= strike_float <= ce_upper and ltp_float > 0 and ltp_float <= spcl_val:
+                if ltp_float > best_ce_ltp:
+                    best_ce = strike_float
+                    best_ce_ltp = ltp_float
 
     # Find BEST PE strike in range with LTP <= SPCL VAL (highest LTP)
     best_pe = None
     best_pe_ltp = -1
-    for strike in [float(s) for s in pe_map.keys()]:
-        if pe_lower <= strike <= pe_upper:
-            ltp = pe_map.get(strike, 0)
-            if ltp is not None and float(ltp) <= spcl_val and float(ltp) > best_pe_ltp:
-                best_pe = strike
-                best_pe_ltp = float(ltp)
+    if pe_map:
+        for strike, ltp in pe_map.items():
+            strike_float = float(strike)
+            ltp_float = float(ltp) if ltp else 0
+            # Include strike if it's in OTM range AND has LTP <= SPCL VAL
+            if pe_lower <= strike_float <= pe_upper and ltp_float > 0 and ltp_float <= spcl_val:
+                if ltp_float > best_pe_ltp:
+                    best_pe = strike_float
+                    best_pe_ltp = ltp_float
 
     # Create display for best strikes
     html = f"<div class='valid-strikes-wrap'>"
