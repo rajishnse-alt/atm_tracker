@@ -144,14 +144,25 @@ st.markdown("""
   .trade-buy { color: #00e676; }
   .trade-sell { color: #ff5252; }
   .trade-qty { color: #FFD700; font-weight: 600; }
+  .trade-strike { font-weight: 600; }
+  .trade-strike-valid { background: rgba(0, 230, 118, 0.35); padding: 2px 4px; border-radius: 3px; border: 1px solid #00e676; color: #00e676; font-weight: 700; }
+  .trade-strike-valid::before { content: '✓ '; }
   .strikes-display-wrap { display: inline-flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; }
   .strikes-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .strikes-side { font-family: var(--mono); font-size: 11px; }
   .strikes-ce { color: #00BFFF; }
   .strikes-pe { color: #FF69B4; }
-  .strike-item { display: inline-block; margin-right: 4px; }
+  .strike-item { display: inline-block; margin-right: 6px; }
   .strike-val { font-weight: 600; }
-  .strike-valid { background: rgba(0, 230, 118, 0.2); padding: 1px 3px; border-radius: 2px; border: 1px solid rgba(0, 230, 118, 0.4); }
+  .strike-valid { background: rgba(0, 230, 118, 0.35); padding: 2px 4px; border-radius: 3px; border: 1px solid #00e676; color: #00e676; font-weight: 700; }
+  .strike-valid::before { content: '✓ '; }
+
+  .valid-strikes-wrap { display: inline-block; background: var(--surface); border: 2px solid #00e676; border-radius: 6px; padding: 5px 8px; font-family: var(--mono); font-size: 10px; margin-left: 8px; }
+  .valid-strikes-label { color: #00e676; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; display: block; font-weight: 700; font-size: 9px; }
+  .valid-strikes-side { margin: 2px 0; font-weight: 600; }
+  .valid-strikes-ce { color: #00BFFF; }
+  .valid-strikes-pe { color: #FF69B4; }
+  .valid-strike-item { display: inline-block; margin-right: 6px; padding: 2px 4px; background: rgba(0, 230, 118, 0.2); border: 1px solid #00e676; border-radius: 3px; color: #00e676; font-weight: 600; }
 
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
@@ -933,6 +944,45 @@ def _spcl_badge(val, label, bullish=None):
             f"<span class='spcl-val-display {color_class}'>{val:.2f}</span>"
             f"</div>")
 
+def _valid_strikes_summary(atm, spcl_val=None):
+    """
+    Display only CE and PE strikes that are <= SPCL VAL.
+    Shows which strikes are actionable based on SPCL VAL threshold.
+    """
+    if spcl_val is None or math.isnan(spcl_val):
+        return ""
+
+    # CE side positions
+    ce_300 = atm + 300
+    ce_500 = atm + 500
+    ce_1300 = atm + 1300
+
+    # PE side positions
+    pe_300 = atm - 300
+    pe_500 = atm - 500
+    pe_1300 = atm - 1300
+
+    # Filter strikes <= spcl_val
+    valid_ce = [s for s in [ce_300, ce_500, ce_1300] if s <= spcl_val]
+    valid_pe = [s for s in [pe_300, pe_500, pe_1300] if s <= spcl_val]
+
+    # If no valid strikes, don't show the box
+    if not valid_ce and not valid_pe:
+        return ""
+
+    ce_str = " ".join([f"<span class='valid-strike-item'>{s}</span>" for s in sorted(valid_ce)])
+    pe_str = " ".join([f"<span class='valid-strike-item'>{s}</span>" for s in sorted(valid_pe)])
+
+    html = f"<div class='valid-strikes-wrap'>"
+    html += f"<span class='valid-strikes-label'>✓ Valid Strikes (≤ SPCL)</span>"
+    if valid_ce:
+        html += f"<div class='valid-strikes-side valid-strikes-ce'>CE: {ce_str}</div>"
+    if valid_pe:
+        html += f"<div class='valid-strikes-side valid-strikes-pe'>PE: {pe_str}</div>"
+    html += f"</div>"
+
+    return html
+
 def _strikes_display(atm, spcl_val=None):
     """
     Display CE and PE side strikes next to SPCL VAL.
@@ -974,7 +1024,7 @@ def _strikes_display(atm, spcl_val=None):
 
 def _trade_setup_badge(atm, step, spcl_val=None):
     """
-    Render predefined trade setup showing CE and PE side positions.
+    Render predefined trade setup showing CE and PE side positions with Buy/Sell and quantities.
     Highlights strikes that are <= SPCL VAL.
 
     CE Side: ATM+300(B)[1], ATM+500(S)[3], ATM+1300(B)[2]
@@ -990,30 +1040,29 @@ def _trade_setup_badge(atm, step, spcl_val=None):
     pe_500 = atm - 500
     pe_1300 = atm - 1300
 
-    # Helper function to apply highlighting if strike <= spcl_val
-    def format_strike(strike, spcl_val):
+    # Helper function to format strike with highlighting for <= spcl_val
+    def format_setup_item(strike, action, qty, spcl_val):
+        strike_html = f"<span class='trade-strike'>{strike}</span>"
         if spcl_val is not None and not math.isnan(spcl_val) and strike <= spcl_val:
-            return f"<span class='trade-strike trade-strike-valid'>{strike}</span>"
-        return f"<span class='trade-strike'>{strike}</span>"
+            strike_html = f"<span class='trade-strike trade-strike-valid'>{strike}</span>"
 
-    ce_300_fmt = format_strike(ce_300, spcl_val)
-    ce_500_fmt = format_strike(ce_500, spcl_val)
-    ce_1300_fmt = format_strike(ce_1300, spcl_val)
-    pe_300_fmt = format_strike(pe_300, spcl_val)
-    pe_500_fmt = format_strike(pe_500, spcl_val)
-    pe_1300_fmt = format_strike(pe_1300, spcl_val)
+        action_class = "trade-buy" if action == "B" else "trade-sell"
+        return f"{strike_html}<span class='{action_class}'>({action})</span>[{qty}]"
+
+    ce_300_fmt = format_setup_item(ce_300, "B", 1, spcl_val)
+    ce_500_fmt = format_setup_item(ce_500, "S", 3, spcl_val)
+    ce_1300_fmt = format_setup_item(ce_1300, "B", 2, spcl_val)
+    pe_300_fmt = format_setup_item(pe_300, "B", 1, spcl_val)
+    pe_500_fmt = format_setup_item(pe_500, "S", 3, spcl_val)
+    pe_1300_fmt = format_setup_item(pe_1300, "B", 2, spcl_val)
 
     setup_html = (f"<div class='trade-setup-wrap'>"
                   f"<span class='trade-setup-label'>Setup</span>"
                   f"<div class='trade-side trade-ce'>"
-                  f"CE: {ce_300_fmt}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{ce_500_fmt}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{ce_1300_fmt}<span class='trade-buy'>(B)</span>[2]"
+                  f"CE: {ce_300_fmt} | {ce_500_fmt} | {ce_1300_fmt}"
                   f"</div>"
                   f"<div class='trade-side trade-pe'>"
-                  f"PE: {pe_300_fmt}<span class='trade-buy'>(B)</span>[1] | "
-                  f"{pe_500_fmt}<span class='trade-sell'>(S)</span>[3] | "
-                  f"{pe_1300_fmt}<span class='trade-buy'>(B)</span>[2]"
+                  f"PE: {pe_300_fmt} | {pe_500_fmt} | {pe_1300_fmt}"
                   f"</div>"
                   f"</div>")
     return setup_html
@@ -1026,6 +1075,7 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     - SPCL VAL : Special value indicator (sqrt(CE_LTP + PE_LTP) * π/2, adjusted for VIX)
                Color: Green if bullish (Bu), Dark Orange if bearish (Be)
     - Trade Setup: Predefined positions (CE/PE sides with strikes and quantities)
+    - Valid Strikes: Shows only strikes that are <= SPCL VAL
     - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
     badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
@@ -1039,12 +1089,17 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         badges += "<span class='pcr-divider'>│</span>"
         badges += _spcl_badge(spcl_val, "SPCL VAL", bullish=bullish)
 
-    # Add Strikes display next to SPCL VAL (showing CE/PE sides)
-    if atm is not None:
+    # Add Trade Setup next to SPCL VAL (with SPCL VAL comparison and highlights)
+    if atm is not None and step is not None:
         badges += "<span class='pcr-divider'>│</span>"
-        badges += _strikes_display(atm, spcl_val)
+        badges += _trade_setup_badge(atm, step, spcl_val)
 
     html = f"<div class='pcr-row'>{badges}</div>"
+
+    # Add Valid Strikes summary (strikes <= SPCL VAL)
+    valid_strikes = _valid_strikes_summary(atm, spcl_val) if atm is not None else ""
+    if valid_strikes:
+        html += f"<div class='pcr-row' style='margin-top:5px;'>{valid_strikes}</div>"
 
     # Add OI Change row showing ATM Calls and Puts direction
     if atm_ce_oi_chg is not None and atm_pe_oi_chg is not None:
