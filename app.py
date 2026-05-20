@@ -1358,61 +1358,58 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
     """
     Display current running P&L at center (spot) and probable losses at extreme ends.
 
+    Works with both standard structure and custom entry strikes.
+
     Shows:
     - Current P&L at spot (center)
-    - Probable loss if spot reaches CE extreme (ATM+1400)
-    - Probable loss if spot reaches PE extreme (ATM-1400)
+    - Probable loss at CE extreme (highest CE strike)
+    - Probable loss at PE extreme (lowest PE strike)
     """
-    # Get LTPs (use opening prices if provided, else current)
-    ce_ltps = {}
-    pe_ltps = {}
-    base_qties = {'400': 1, '600': 3, '1400': 2}
+    # If custom entry prices provided, use those directly
+    if opening_ce_prices and opening_pe_prices:
+        ce_strikes_prices = opening_ce_prices
+        pe_strikes_prices = opening_pe_prices
+    else:
+        # Use standard structure (ATM±400, ±600, ±1400)
+        ce_strikes_prices = {}
+        pe_strikes_prices = {}
+        for offset in [400, 600, 1400]:
+            ce_strike = atm + offset
+            pe_strike = atm - offset
+            ce_strikes_prices[ce_strike] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
+            pe_strikes_prices[pe_strike] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
 
-    for offset in ['400', '600', '1400']:
-        ce_strike = atm + int(offset)
-        pe_strike = atm - int(offset)
+    # Calculate total net premium (sum of all long premiums minus short premiums)
+    # Assumption: prices in user input are entry prices, standard qty is 1 lot each unless adjusted
+    total_premium = sum(ce_strikes_prices.values()) + sum(pe_strikes_prices.values())
 
-        if opening_ce_prices and ce_strike in opening_ce_prices:
-            ce_ltps[offset] = float(opening_ce_prices[ce_strike]) if opening_ce_prices[ce_strike] else 0
-        else:
-            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
-
-        if opening_pe_prices and pe_strike in opening_pe_prices:
-            pe_ltps[offset] = float(opening_pe_prices[pe_strike]) if opening_pe_prices[pe_strike] else 0
-        else:
-            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
-
-    # Calculate net premium
-    ce_debit = ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']
-    ce_credit = ce_ltps['600'] * base_qties['600']
-    ce_net = ce_debit - ce_credit
-
-    pe_debit = pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']
-    pe_credit = pe_ltps['600'] * base_qties['600']
-    pe_net = pe_debit - pe_credit
-
-    total_net_premium = ce_net + pe_net
-
-    # Calculate P&L at spot (current center)
+    # Calculate P&L at any spot price
     def calc_pnl_at_spot(spot_price):
-        ce_400_pnl = max(0, spot_price - (atm + 400)) * base_qties['400'] * 100 if spot_price > atm + 400 else 0
-        ce_600_pnl = -max(0, spot_price - (atm + 600)) * base_qties['600'] * 100 if spot_price > atm + 600 else 0
-        ce_1400_pnl = max(0, spot_price - (atm + 1400)) * ce_1400_qty * 100 if spot_price > atm + 1400 else 0
+        pnl = -total_premium  # Start with negative premium paid
 
-        pe_400_pnl = max(0, (atm - 400) - spot_price) * base_qties['400'] * 100 if spot_price < atm - 400 else 0
-        pe_600_pnl = -max(0, (atm - 600) - spot_price) * base_qties['600'] * 100 if spot_price < atm - 600 else 0
-        pe_1400_pnl = max(0, (atm - 1400) - spot_price) * pe_1400_qty * 100 if spot_price < atm - 1400 else 0
+        # Calculate payoff for each CE strike
+        for ce_strike, ce_ltp in ce_strikes_prices.items():
+            # Assume long calls (bought) - benefit from upside
+            intrinsic = max(0, spot_price - ce_strike) * 100
+            pnl += intrinsic - (ce_ltp * 100)
 
-        return (ce_400_pnl + ce_600_pnl + ce_1400_pnl +
-               pe_400_pnl + pe_600_pnl + pe_1400_pnl -
-               total_net_premium)
+        # Calculate payoff for each PE strike
+        for pe_strike, pe_ltp in pe_strikes_prices.items():
+            # Assume long puts (bought) - benefit from downside
+            intrinsic = max(0, pe_strike - spot_price) * 100
+            pnl += intrinsic - (pe_ltp * 100)
+
+        return pnl
 
     # Current P&L at spot
     current_pnl = calc_pnl_at_spot(atm)
 
-    # Max losses at extremes
-    ce_extreme_loss = calc_pnl_at_spot(atm + 1400)
-    pe_extreme_loss = calc_pnl_at_spot(atm - 1400)
+    # Max losses at extremes (highest CE and lowest PE)
+    ce_extreme_strike = max(ce_strikes_prices.keys()) if ce_strikes_prices else atm + 1400
+    pe_extreme_strike = min(pe_strikes_prices.keys()) if pe_strikes_prices else atm - 1400
+
+    ce_extreme_loss = calc_pnl_at_spot(ce_extreme_strike)
+    pe_extreme_loss = calc_pnl_at_spot(pe_extreme_strike)
 
     # Color coding
     current_color = "#00e676" if current_pnl >= 0 else "#FF6B6B"
