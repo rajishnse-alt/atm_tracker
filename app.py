@@ -1054,58 +1054,96 @@ def _strikes_display(atm, spcl_val=None):
 def _calculate_qty_adjustment(atm, ce_map, pe_map):
     """
     Calculate which side (CE/PE) has more loss potential and adjust far leg (1400) quantities.
+    Ensures max intraday loss stays < 1.8% of capital deployed.
 
-    Returns dict with adjusted quantities based on imbalance:
-    {'ce_1400_qty': adjusted_qty, 'pe_1400_qty': adjusted_qty}
+    Position Structure (Iron Condor):
+    - CE: ATM+400(B)[1] | ATM+600(S)[3] | ATM+1400(B)[2]  → Max loss at 24200 (short strike)
+    - PE: ATM-400(B)[1] | ATM-600(S)[3] | ATM-1400(B)[2]  → Max loss at 23000 (short strike)
+
+    Returns dict with adjusted quantities:
+    {'ce_1400_qty': adjusted_qty, 'pe_1400_qty': adjusted_qty, 'loss_pct': loss_percentage}
     """
     # Base quantities for each leg
     base_qties = {'400': 1, '600': 3, '1400': 2}
 
-    # Calculate total loss potential for CE side (long calls above ATM)
-    ce_loss = 0
-    for offset, qty in base_qties.items():
-        strike = atm + int(offset)
-        if ce_map:
-            ltp = ce_map.get(strike, ce_map.get(str(strike), 0))
-            if isinstance(ltp, str):
-                ltp = float(ltp) if ltp else 0
-        else:
-            ltp = 0
-        # Loss potential: distance from spot * quantity (simplified risk measure)
-        distance = strike - atm  # OTM distance
-        ce_loss += distance * qty * 0.5
+    # Get LTPs for all legs
+    ce_ltps = {}
+    pe_ltps = {}
 
-    # Calculate total loss potential for PE side (long puts below ATM)
-    pe_loss = 0
-    for offset, qty in base_qties.items():
-        strike = atm - int(offset)
-        if pe_map:
-            ltp = pe_map.get(strike, pe_map.get(str(strike), 0))
-            if isinstance(ltp, str):
-                ltp = float(ltp) if ltp else 0
+    for offset in ['400', '600', '1400']:
+        ce_strike = atm + int(offset)
+        pe_strike = atm - int(offset)
+
+        if ce_map:
+            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
         else:
-            ltp = 0
-        # Loss potential: distance from spot * quantity (simplified risk measure)
-        distance = atm - strike  # OTM distance
-        pe_loss += distance * qty * 0.5
+            ce_ltps[offset] = 0
+
+        if pe_map:
+            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+        else:
+            pe_ltps[offset] = 0
+
+    # Calculate loss potential for imbalance detection
+    ce_loss = sum((atm + int(offset) - atm) * qty * 0.5 for offset, qty in base_qties.items())
+    pe_loss = sum((atm - (atm - int(offset))) * qty * 0.5 for offset, qty in base_qties.items())
+
+    # Calculate max loss at SHORT strikes (where max loss occurs in iron condor)
+    # CE: Long 400 & 1400, Short 600 → Max loss = (600 - 400) × 100 per lot
+    # PE: Long 400 & 1400, Short 600 → Max loss = (600 - 400) × 100 per lot
+    ce_short_strike = atm + 600
+    pe_short_strike = atm - 600
+
+    max_loss_per_ce_lot = (600 - 400) * 100  # 20,000 per lot at short strike
+    max_loss_per_pe_lot = (600 - 400) * 100  # 20,000 per lot at short strike
+
+    # Calculate capital deployed (net premium: long premiums - short premiums)
+    ce_capital = (ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']) - (ce_ltps['600'] * base_qties['600'])
+    pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
+    total_capital = ce_capital + pe_capital
+
+    # Calculate current max loss and loss percentage
+    current_max_loss_ce = max_loss_per_ce_lot * base_qties['600']
+    current_max_loss_pe = max_loss_per_pe_lot * base_qties['600']
+    current_total_max_loss = current_max_loss_ce + current_max_loss_pe
+    current_loss_pct = (current_total_max_loss / total_capital * 100) if total_capital > 0 else 0
 
     # Determine which side has more loss and adjust far leg (1400) quantity
-    adjusted_qties = {'ce_1400_qty': 2, 'pe_1400_qty': 2}
+    adjusted_qties = {'ce_1400_qty': 2, 'pe_1400_qty': 2, 'loss_pct': current_loss_pct}
 
-    if ce_loss > pe_loss and pe_loss > 0:
-        # CE side has MORE loss potential, increase ce_1400 quantity
-        imbalance_ratio = ce_loss / pe_loss
-        adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))  # Scale imbalance to qty multiplier
-        adjusted_qties['ce_1400_qty'] = max(2, int(2 + adjustment * 2))
-    elif pe_loss > ce_loss and ce_loss > 0:
-        # PE side has MORE loss potential, increase pe_1400 quantity
-        imbalance_ratio = pe_loss / ce_loss
-        adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))
-        adjusted_qties['pe_1400_qty'] = max(2, int(2 + adjustment * 2))
+    # Only increase quantities if loss stays < 1.8%
+    if current_loss_pct < 1.8:
+        if ce_loss > pe_loss and pe_loss > 0:
+            # CE side has MORE loss potential, increase ce_1400 quantity
+            imbalance_ratio = ce_loss / pe_loss
+            adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))
+            new_ce_qty = max(2, int(2 + adjustment * 2))
+
+            # Check if new quantity still keeps loss < 1.8%
+            new_max_loss = current_max_loss_ce + (max_loss_per_ce_lot * (new_ce_qty - base_qties['1400'])) + current_max_loss_pe
+            new_loss_pct = (new_max_loss / total_capital * 100) if total_capital > 0 else 0
+
+            if new_loss_pct < 1.8:
+                adjusted_qties['ce_1400_qty'] = new_ce_qty
+                adjusted_qties['loss_pct'] = new_loss_pct
+
+        elif pe_loss > ce_loss and ce_loss > 0:
+            # PE side has MORE loss potential, increase pe_1400 quantity
+            imbalance_ratio = pe_loss / ce_loss
+            adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))
+            new_pe_qty = max(2, int(2 + adjustment * 2))
+
+            # Check if new quantity still keeps loss < 1.8%
+            new_max_loss = current_max_loss_ce + current_max_loss_pe + (max_loss_per_pe_lot * (new_pe_qty - base_qties['1400']))
+            new_loss_pct = (new_max_loss / total_capital * 100) if total_capital > 0 else 0
+
+            if new_loss_pct < 1.8:
+                adjusted_qties['pe_1400_qty'] = new_pe_qty
+                adjusted_qties['loss_pct'] = new_loss_pct
 
     return adjusted_qties
 
-def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2):
+def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2, loss_pct=0):
     """
     Render predefined trade setup showing CE and PE side positions with Buy/Sell and quantities.
     Highlights strikes that are <= SPCL VAL.
@@ -1114,6 +1152,7 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2):
     PE Side: ATM-400(B)[1], ATM-600(S)[3], ATM-1400(B)[adjusted]
 
     Quantities for far legs (1400) are adjusted based on which side has more loss potential.
+    Max loss is constrained to stay < 1.8% of capital deployed (displayed as risk indicator).
     """
     # CE side positions
     ce_400 = atm + 400
@@ -1144,6 +1183,10 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2):
     pe_600_fmt = format_setup_item(pe_600, "S", 3, spcl_val)
     pe_1400_fmt = format_setup_item(pe_1400, "B", pe_1400_qty, spcl_val)
 
+    # Determine risk color based on loss percentage
+    risk_color = "#00e676" if loss_pct < 1.2 else "#FFA500" if loss_pct < 1.8 else "#FF6B6B"
+    risk_label = "✓ Safe" if loss_pct < 1.2 else "⚠ Caution" if loss_pct < 1.8 else "⛔ High"
+
     setup_html = (f"<div class='trade-setup-wrap'>"
                   f"<span class='trade-setup-label'>Setup</span>"
                   f"<div class='trade-side trade-ce'>"
@@ -1152,6 +1195,7 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2):
                   f"<div class='trade-side trade-pe'>"
                   f"PE: {pe_400_fmt} | {pe_600_fmt} | {pe_1400_fmt}"
                   f"</div>"
+                  f"<span style='font-size:11px; color:{risk_color}; margin-left:4px;'>Loss: {loss_pct:.2f}% {risk_label}</span>"
                   f"</div>")
     return setup_html
 
@@ -1180,9 +1224,9 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     # Add Trade Setup next to SPCL VAL (with SPCL VAL comparison and highlights)
     if atm is not None and step is not None:
         badges += "<span class='pcr-divider'>│</span>"
-        # Calculate risk-balanced quantities for far legs
+        # Calculate risk-balanced quantities for far legs (capped at 1.8% max loss)
         adjusted_qties = _calculate_qty_adjustment(atm, ce_map, pe_map)
-        badges += _trade_setup_badge(atm, step, spcl_val, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'])
+        badges += _trade_setup_badge(atm, step, spcl_val, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], adjusted_qties['loss_pct'])
 
     html = f"<div class='pcr-row'>{badges}"
 
