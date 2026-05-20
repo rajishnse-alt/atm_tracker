@@ -1051,7 +1051,7 @@ def _strikes_display(atm, spcl_val=None):
                     f"</div>")
     return strikes_html
 
-def _calculate_qty_adjustment(atm, ce_map, pe_map):
+def _calculate_qty_adjustment(atm, ce_map, pe_map, opening_ce_prices=None, opening_pe_prices=None):
     """
     Calculate which side (CE/PE) has more loss potential and adjust far leg (1400) quantities.
     Ensures max intraday loss stays < 1.8% of capital deployed.
@@ -1066,7 +1066,7 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map):
     # Base quantities for each leg
     base_qties = {'400': 1, '600': 3, '1400': 2}
 
-    # Get LTPs for all legs
+    # Get LTPs for all legs (use opening prices if provided, else use current LTPs)
     ce_ltps = {}
     pe_ltps = {}
 
@@ -1074,15 +1074,19 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map):
         ce_strike = atm + int(offset)
         pe_strike = atm - int(offset)
 
-        if ce_map:
-            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
+        # CE: Use provided bought price if available, else Wednesday opening from ce_map
+        if opening_ce_prices and ce_strike in opening_ce_prices:
+            ce_ltps[offset] = float(opening_ce_prices[ce_strike]) if opening_ce_prices[ce_strike] else 0
         else:
-            ce_ltps[offset] = 0
+            # Default to Wednesday opening prices from ce_map
+            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
 
-        if pe_map:
-            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+        # PE: Use provided bought price if available, else Wednesday opening from pe_map
+        if opening_pe_prices and pe_strike in opening_pe_prices:
+            pe_ltps[offset] = float(opening_pe_prices[pe_strike]) if opening_pe_prices[pe_strike] else 0
         else:
-            pe_ltps[offset] = 0
+            # Default to Wednesday opening prices from pe_map
+            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
 
     # Calculate loss potential for imbalance detection
     ce_loss = sum((atm + int(offset) - atm) * qty * 0.5 for offset, qty in base_qties.items())
@@ -1143,7 +1147,7 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map):
 
     return adjusted_qties
 
-def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
+def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None):
     """
     Generate SVG payoff/P&L chart showing profit/loss across strike range.
 
@@ -1151,8 +1155,21 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
     - Red area for losses
     - Green area for profits
     - Proper scaling and axis labels
+    - Loss amounts at sold strikes (ATM±600)
+
+    Parameters:
+    -----------
+    opening_ce_prices : dict, optional
+        CE strike actual bought/entry prices. If provided, uses these for P&L calcs instead of Wednesday opens.
+        Format: {24000: 67.5, 24400: 45.0, 25400: 2.5}
+
+    opening_pe_prices : dict, optional
+        PE strike actual bought/entry prices. If provided, uses these for P&L calcs instead of Wednesday opens.
+        Format: {23600: 85.0, 23200: 50.0, 22200: 5.5}
+
+    If bought prices not provided, uses Wednesday opening prices from ce_map/pe_map (default).
     """
-    # Get LTPs for all legs
+    # Get LTPs for all legs (use opening prices if provided, else use current LTPs)
     ce_ltps = {}
     pe_ltps = {}
     base_qties = {'400': 1, '600': 3, '1400': 2}
@@ -1160,14 +1177,20 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
     for offset in ['400', '600', '1400']:
         ce_strike = atm + int(offset)
         pe_strike = atm - int(offset)
-        if ce_map:
-            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
+
+        # CE: Use provided bought price if available, else Wednesday opening from ce_map
+        if opening_ce_prices and ce_strike in opening_ce_prices:
+            ce_ltps[offset] = float(opening_ce_prices[ce_strike]) if opening_ce_prices[ce_strike] else 0
         else:
-            ce_ltps[offset] = 0
-        if pe_map:
-            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+            # Default to Wednesday opening prices from ce_map
+            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
+
+        # PE: Use provided bought price if available, else Wednesday opening from pe_map
+        if opening_pe_prices and pe_strike in opening_pe_prices:
+            pe_ltps[offset] = float(opening_pe_prices[pe_strike]) if opening_pe_prices[pe_strike] else 0
         else:
-            pe_ltps[offset] = 0
+            # Default to Wednesday opening prices from pe_map
+            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
 
     # Calculate net premium (debit if positive, credit if negative)
     ce_debit = ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']
@@ -1234,12 +1257,31 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
     ce_extreme = atm + 1400
     pe_extreme = atm - 1400
 
-    # Draw vertical lines for key strikes with labels
-    for strike, label, color, style in [
-        (pe_extreme, "PE:1400", "#FF9999", "dotted"),
-        (pe_short, "PE:600(S)", "#FF6B6B", "solid"),
-        (ce_short, "CE:600(S)", "#4CAF50", "solid"),
-        (ce_extreme, "CE:1400", "#99FF99", "dotted")
+    # Calculate losses at sold strikes based on current LTP
+    def calc_payoff_at_strike(strike, ce_ltps, pe_ltps, base_qties, ce_1400_qty, pe_1400_qty, total_net_premium, atm):
+        """Calculate payoff at a specific strike"""
+        ce_400_payoff = max(0, strike - (atm + 400)) * base_qties['400'] * 100 if strike > atm + 400 else 0
+        ce_600_payoff = -max(0, strike - (atm + 600)) * base_qties['600'] * 100 if strike > atm + 600 else 0
+        ce_1400_payoff = max(0, strike - (atm + 1400)) * ce_1400_qty * 100 if strike > atm + 1400 else 0
+
+        pe_400_payoff = max(0, (atm - 400) - strike) * base_qties['400'] * 100 if strike < atm - 400 else 0
+        pe_600_payoff = -max(0, (atm - 600) - strike) * base_qties['600'] * 100 if strike < atm - 600 else 0
+        pe_1400_payoff = max(0, (atm - 1400) - strike) * pe_1400_qty * 100 if strike < atm - 1400 else 0
+
+        total = (ce_400_payoff + ce_600_payoff + ce_1400_payoff +
+                pe_400_payoff + pe_600_payoff + pe_1400_payoff -
+                total_net_premium)
+        return total
+
+    ce_short_loss = calc_payoff_at_strike(ce_short, ce_ltps, pe_ltps, base_qties, ce_1400_qty, pe_1400_qty, total_net_premium, atm)
+    pe_short_loss = calc_payoff_at_strike(pe_short, ce_ltps, pe_ltps, base_qties, ce_1400_qty, pe_1400_qty, total_net_premium, atm)
+
+    # Draw vertical lines for key strikes with labels and loss amounts
+    for strike, label, color, style, loss_val in [
+        (pe_extreme, "PE:1400", "#FF9999", "dotted", None),
+        (pe_short, "PE:600(S)", "#FF6B6B", "solid", pe_short_loss),
+        (ce_short, "CE:600(S)", "#4CAF50", "solid", ce_short_loss),
+        (ce_extreme, "CE:1400", "#99FF99", "dotted", None)
     ]:
         x = margin + (strike - min(strike_range)) * x_scale
         if margin <= x <= width - margin:
@@ -1247,6 +1289,13 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
             # Add label at top
             label_y = margin - 8
             svg += f'<text x="{x}" y="{label_y}" font-size="7" fill="{color}" text-anchor="middle" opacity="0.6">{label}</text>'
+
+            # Add loss amount for sold legs
+            if loss_val is not None:
+                loss_color = "#FF6B6B" if loss_val < 0 else "#00e676"
+                loss_label = f"₹{int(loss_val):,}" if loss_val != 0 else "0"
+                loss_y = zero_y + 10
+                svg += f'<text x="{x}" y="{loss_y}" font-size="7" fill="{loss_color}" text-anchor="middle" font-weight="bold">{loss_label}</text>'
 
     # Find and mark breakeven points
     breakevens = []
@@ -1421,7 +1470,64 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2, l
                   f"</div>")
     return setup_html
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None):
+def parse_entry_prices(text_input):
+    """
+    Parse entry prices from user text input.
+
+    Supports formats:
+    - CE 24000: 65.5
+    - PE 23600: 85.0
+    - 24000: 65.5 (auto-detect based on value)
+
+    Returns:
+    --------
+    (ce_prices_dict, pe_prices_dict) : tuple of dicts
+        {strike: price, ...}
+    """
+    ce_prices = {}
+    pe_prices = {}
+
+    if not text_input or text_input.strip() == "":
+        return ce_prices, pe_prices
+
+    lines = text_input.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line or ':' not in line:
+            continue
+
+        try:
+            # Parse "CE 24000: 65.5" or "PE 23600: 85" or "24000: 65.5"
+            parts = line.split(':')
+            if len(parts) != 2:
+                continue
+
+            label_strike = parts[0].strip()
+            price = float(parts[1].strip())
+
+            # Detect CE/PE and extract strike
+            if label_strike.startswith('CE'):
+                strike = int(label_strike.replace('CE', '').strip())
+                ce_prices[strike] = price
+            elif label_strike.startswith('PE'):
+                strike = int(label_strike.replace('PE', '').strip())
+                pe_prices[strike] = price
+            else:
+                # Try to parse as just strike number
+                strike = int(label_strike)
+                # Auto-detect based on value (heuristic: if price > 50, likely CE, else PE)
+                # Or use first digit to determine
+                if price > 50:
+                    ce_prices[strike] = price
+                else:
+                    pe_prices[strike] = price
+
+        except (ValueError, IndexError):
+            continue
+
+    return ce_prices, pe_prices
+
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None):
     """
     Render PCR badges with OI change information, SPCL VAL, and trade setup.
     - PCR OI   : based on total open interest (standard)
@@ -1448,7 +1554,7 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     if atm is not None and step is not None:
         badges += "<span class='pcr-divider'>│</span>"
         # Calculate risk-balanced quantities for far legs (capped at 1.8% max loss)
-        adjusted_qties = _calculate_qty_adjustment(atm, ce_map, pe_map)
+        adjusted_qties = _calculate_qty_adjustment(atm, ce_map, pe_map, opening_ce_prices, opening_pe_prices)
         badges += _trade_setup_badge(atm, step, spcl_val, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], adjusted_qties['loss_pct'])
 
         # Calculate capital for risk profile chart
@@ -1458,21 +1564,24 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         for offset in ['400', '600', '1400']:
             ce_strike = atm + int(offset)
             pe_strike = atm - int(offset)
-            if ce_map:
-                ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
+
+            # Use provided bought price if available, else Wednesday opening from ce_map/pe_map
+            if opening_ce_prices and ce_strike in opening_ce_prices:
+                ce_ltps[offset] = float(opening_ce_prices[ce_strike]) if opening_ce_prices[ce_strike] else 0
             else:
-                ce_ltps[offset] = 0
-            if pe_map:
-                pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+                ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
+
+            if opening_pe_prices and pe_strike in opening_pe_prices:
+                pe_ltps[offset] = float(opening_pe_prices[pe_strike]) if opening_pe_prices[pe_strike] else 0
             else:
-                pe_ltps[offset] = 0
+                pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
 
         ce_capital = (ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']) - (ce_ltps['600'] * base_qties['600'])
         pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
         total_capital = ce_capital + pe_capital
 
-        # Generate payoff chart
-        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'])
+        # Generate payoff chart (uses opening prices if provided)
+        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
         risk_chart_html = payoff_chart
 
     html = f"<div class='pcr-row'>{badges}"
