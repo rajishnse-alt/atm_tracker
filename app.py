@@ -1354,7 +1354,7 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
     svg += '</svg>'
     return svg
 
-def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None):
+def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY'):
     """
     Display current running P&L at center (spot) and probable losses at extreme ends.
 
@@ -1383,21 +1383,24 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
     # Assumption: prices in user input are entry prices, standard qty is 1 lot each unless adjusted
     total_premium = sum(ce_strikes_prices.values()) + sum(pe_strikes_prices.values())
 
+    # Get the lot size for this symbol
+    lot_size = get_lot_size(symbol)
+
     # Calculate P&L at any spot price
     def calc_pnl_at_spot(spot_price):
-        pnl = -total_premium  # Start with negative premium paid
+        pnl = -total_premium * lot_size  # Start with negative premium paid (adjusted for lot size)
 
         # Calculate payoff for each CE strike
         for ce_strike, ce_ltp in ce_strikes_prices.items():
             # Assume long calls (bought) - benefit from upside
-            intrinsic = max(0, spot_price - ce_strike) * 100
-            pnl += intrinsic - (ce_ltp * 100)
+            intrinsic = max(0, spot_price - ce_strike) * lot_size
+            pnl += intrinsic - (ce_ltp * lot_size)
 
         # Calculate payoff for each PE strike
         for pe_strike, pe_ltp in pe_strikes_prices.items():
             # Assume long puts (bought) - benefit from downside
-            intrinsic = max(0, pe_strike - spot_price) * 100
-            pnl += intrinsic - (pe_ltp * 100)
+            intrinsic = max(0, pe_strike - spot_price) * lot_size
+            pnl += intrinsic - (pe_ltp * lot_size)
 
         return pnl
 
@@ -1554,6 +1557,29 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2, l
                   f"</div>")
     return setup_html
 
+# NSE F&O Lot Sizes (as per SEBI regulations)
+LOT_SIZES = {
+    'NIFTY': 65,
+    'BANKNIFTY': 30,
+    'FINNIFTY': 60,
+    'MIDCPNIFTY': 120,
+    'NIFTYNXT50': 25,
+    'HDFCBANK': 550,
+    'ICICIBANK': 1100,
+    'SBIN': 1500,
+    'RELIANCE': 500,
+    'HDFC': 200,
+    'INFY': 600,
+    'TCS': 200,
+    'WIPRO': 700,
+    'AXISBANK': 700,
+    'LT': 250,
+}
+
+def get_lot_size(symbol):
+    """Get lot size for a given symbol. Default to 100 if not found."""
+    return LOT_SIZES.get(symbol.upper(), 100)
+
 def parse_entry_prices(text_input):
     """
     Parse entry prices from user text input with buy/sell notation.
@@ -1619,7 +1645,7 @@ def parse_entry_prices(text_input):
 
     return ce_prices, pe_prices
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None):
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY'):
     """
     Render PCR badges with OI change information, SPCL VAL, and trade setup.
     - PCR OI   : based on total open interest (standard)
@@ -1672,8 +1698,8 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
         total_capital = ce_capital + pe_capital
 
-        # Generate current P&L display
-        current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
+        # Generate current P&L display (with correct lot size for symbol)
+        current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, symbol)
 
         # Generate payoff chart (uses opening prices if provided)
         payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
@@ -1987,7 +2013,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -2307,7 +2333,7 @@ def show_replay_page(access_token, vix_info, now):
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym)}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
