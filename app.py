@@ -11,7 +11,7 @@ import pytz
 st.set_page_config(page_title="ATM Options Tracker", page_icon="📊", layout="wide")
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;600&family=Syne:wght@600;700;800&display=swap');
 
   :root {
     --bg:        #080c14;
@@ -108,7 +108,7 @@ st.markdown("""
 
   .tag-ce { display: inline-block; background: #102040; color: var(--ce); font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; border: 1px solid #1a3060; }
   .tag-pe { display: inline-block; background: #1e0a28; color: var(--pe); font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; border: 1px solid #3a1a50; }
-  .strike-num { color: var(--text); font-weight: 500; }
+  .strike-num { color: var(--text); font-weight: 600; }
   .price-num  { font-weight: 600; }
 
   .rrs-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; margin-bottom: .5rem; }
@@ -119,16 +119,16 @@ st.markdown("""
   .rrs-table .v-y   { color: #FFD700; font-weight: 600; }
   .rrs-table .v-g   { color: #00e676; font-weight: 600; }
   .rrs-table .v-r   { color: #ff5252; font-weight: 600; }
-  .rrs-table .v-o   { color: #FFA500; font-weight: 600; }
+  .rrs-table .v-o   { color: #FFA600; font-weight: 600; }
   .rrs-table .v-w   { color: white;   font-weight: 600; }
   .rrs-table .v-gray{ color: #666;    font-weight: 400; }
   .rrs-table .v-aq  { color: #00FFFF; font-weight: 600; }
   .rrs-table .sec-hdr-row td { background: #1a1a1a; color: #666; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 7px; }
   .rrs-table .signal-bull td { background: #003318; color: #00e676 !important; font-weight: 700; }
   .rrs-table .signal-bear td { background: #2a0808; color: #ff5252 !important; font-weight: 700; }
-  .rrs-table .signal-neut td { background: #1a1500; color: #FFA500 !important; font-weight: 700; }
+  .rrs-table .signal-neut td { background: #1a1600; color: #FFA600 !important; font-weight: 700; }
   .rrs-table .signal-conf td { background: #1a1a00; color: #FFD700 !important; font-weight: 700; }
-  .spcl-val { font-size: 20px !important; font-weight: 800 !important; color: #FFA500 !important; letter-spacing: -1px; }
+  .spcl-val { font-size: 20px !important; font-weight: 800 !important; color: #FFA600 !important; letter-spacing: -1px; }
 
   .spcl-wrap  { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 9px 3px 7px; }
   .spcl-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
@@ -164,7 +164,7 @@ st.markdown("""
 
   .btst-bull { color: #00e676 !important; font-weight: 700; }
   .btst-bear { color: #ff5252 !important; font-weight: 700; }
-  .btst-neut { color: #FFA500 !important; font-weight: 700; }
+  .btst-neut { color: #FFA600 !important; font-weight: 700; }
 
   .err-box   { background: #1a0808; border: 1px solid #5a1a1a; border-radius: 8px; padding: .6rem .9rem; color: #fc8181; font-family: var(--mono); font-size: 12px; margin-bottom: .5rem; }
   .login-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 14px; padding: 2.5rem 2rem; text-align: center; max-width: 460px; margin: 3rem auto; }
@@ -1017,18 +1017,18 @@ def _strikes_display(atm, spcl_val=None):
     Display CE and PE side strikes next to SPCL VAL.
     Highlights strikes that are <= SPCL VAL.
 
-    CE Strikes: ATM+300, ATM+500, ATM+1300
-    PE Strikes: ATM-300, ATM-500, ATM-1300
+    CE Strikes: ATM+400, ATM+600, ATM+1400
+    PE Strikes: ATM-400, ATM-600, ATM-1400
     """
     # CE side positions
-    ce_300 = atm + 300
-    ce_500 = atm + 500
-    ce_1300 = atm + 1300
+    ce_400 = atm + 400
+    ce_600 = atm + 600
+    ce_1400 = atm + 1400
 
     # PE side positions
-    pe_300 = atm - 300
-    pe_500 = atm - 500
-    pe_1300 = atm - 1300
+    pe_400 = atm - 400
+    pe_600 = atm - 600
+    pe_1400 = atm - 1400
 
     # Helper function to format strike with highlighting
     def format_strike_item(strike, spcl_val):
@@ -1036,38 +1036,94 @@ def _strikes_display(atm, spcl_val=None):
             return f"<span class='strike-item strike-valid'><span class='strike-val'>{strike}</span></span>"
         return f"<span class='strike-item'><span class='strike-val'>{strike}</span></span>"
 
-    ce_300_fmt = format_strike_item(ce_300, spcl_val)
-    ce_500_fmt = format_strike_item(ce_500, spcl_val)
-    ce_1300_fmt = format_strike_item(ce_1300, spcl_val)
-    pe_300_fmt = format_strike_item(pe_300, spcl_val)
-    pe_500_fmt = format_strike_item(pe_500, spcl_val)
-    pe_1300_fmt = format_strike_item(pe_1300, spcl_val)
+    ce_400_fmt = format_strike_item(ce_400, spcl_val)
+    ce_600_fmt = format_strike_item(ce_600, spcl_val)
+    ce_1400_fmt = format_strike_item(ce_1400, spcl_val)
+    pe_400_fmt = format_strike_item(pe_400, spcl_val)
+    pe_600_fmt = format_strike_item(pe_600, spcl_val)
+    pe_1400_fmt = format_strike_item(pe_1400, spcl_val)
 
     strikes_html = (f"<div class='strikes-display-wrap'>"
                     f"<span class='strikes-label'>Strikes</span>"
-                    f"<span class='strikes-side strikes-ce'>CE: {ce_300_fmt} {ce_500_fmt} {ce_1300_fmt}</span>"
+                    f"<span class='strikes-side strikes-ce'>CE: {ce_400_fmt} {ce_600_fmt} {ce_1400_fmt}</span>"
                     f"<span style='color:var(--border2);'>│</span>"
-                    f"<span class='strikes-side strikes-pe'>PE: {pe_300_fmt} {pe_500_fmt} {pe_1300_fmt}</span>"
+                    f"<span class='strikes-side strikes-pe'>PE: {pe_400_fmt} {pe_600_fmt} {pe_1400_fmt}</span>"
                     f"</div>")
     return strikes_html
 
-def _trade_setup_badge(atm, step, spcl_val=None):
+def _calculate_qty_adjustment(atm, ce_map, pe_map):
+    """
+    Calculate which side (CE/PE) has more loss potential and adjust far leg (1400) quantities.
+
+    Returns dict with adjusted quantities based on imbalance:
+    {'ce_1400_qty': adjusted_qty, 'pe_1400_qty': adjusted_qty}
+    """
+    # Base quantities for each leg
+    base_qties = {'400': 1, '600': 3, '1400': 2}
+
+    # Calculate total loss potential for CE side (long calls above ATM)
+    ce_loss = 0
+    for offset, qty in base_qties.items():
+        strike = atm + int(offset)
+        if ce_map:
+            ltp = ce_map.get(strike, ce_map.get(str(strike), 0))
+            if isinstance(ltp, str):
+                ltp = float(ltp) if ltp else 0
+        else:
+            ltp = 0
+        # Loss potential: distance from spot * quantity (simplified risk measure)
+        distance = strike - atm  # OTM distance
+        ce_loss += distance * qty * 0.5
+
+    # Calculate total loss potential for PE side (long puts below ATM)
+    pe_loss = 0
+    for offset, qty in base_qties.items():
+        strike = atm - int(offset)
+        if pe_map:
+            ltp = pe_map.get(strike, pe_map.get(str(strike), 0))
+            if isinstance(ltp, str):
+                ltp = float(ltp) if ltp else 0
+        else:
+            ltp = 0
+        # Loss potential: distance from spot * quantity (simplified risk measure)
+        distance = atm - strike  # OTM distance
+        pe_loss += distance * qty * 0.5
+
+    # Determine which side has more loss and adjust far leg (1400) quantity
+    adjusted_qties = {'ce_1400_qty': 2, 'pe_1400_qty': 2}
+
+    if ce_loss > pe_loss and pe_loss > 0:
+        # CE side has MORE loss potential, increase ce_1400 quantity
+        imbalance_ratio = ce_loss / pe_loss
+        adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))  # Scale imbalance to qty multiplier
+        adjusted_qties['ce_1400_qty'] = max(2, int(2 + adjustment * 2))
+    elif pe_loss > ce_loss and ce_loss > 0:
+        # PE side has MORE loss potential, increase pe_1400 quantity
+        imbalance_ratio = pe_loss / ce_loss
+        adjustment = max(1.0, min(2.5, imbalance_ratio * 0.3))
+        adjusted_qties['pe_1400_qty'] = max(2, int(2 + adjustment * 2))
+
+    return adjusted_qties
+
+def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2):
     """
     Render predefined trade setup showing CE and PE side positions with Buy/Sell and quantities.
     Highlights strikes that are <= SPCL VAL.
 
-    CE Side: ATM+300(B)[1], ATM+500(S)[3], ATM+1300(B)[2]
-    PE Side: ATM-300(B)[1], ATM-500(S)[3], ATM-1300(B)[2]
+    CE Side: ATM+400(B)[1], ATM+600(S)[3], ATM+1400(B)[adjusted]
+    PE Side: ATM-400(B)[1], ATM-600(S)[3], ATM-1400(B)[adjusted]
+
+    Quantities for far legs (1400) are adjusted based on which side has more loss potential.
     """
     # CE side positions
-    ce_300 = atm + 300
-    ce_500 = atm + 500
-    ce_1300 = atm + 1300
+    ce_400 = atm + 400
+    ce_600 = atm + 600
+    ce_1400 = atm + 1400
 
     # PE side positions
-    pe_300 = atm - 300
-    pe_500 = atm - 500
-    pe_1300 = atm - 1300
+    pe_400 = atm - 400
+    pe_600 = atm - 600
+    pe_1400 = atm - 1400
 
     # Helper function to format strike with highlighting for range (SPCL VAL - 5) to SPCL VAL
     def format_setup_item(strike, action, qty, spcl_val):
@@ -1081,20 +1137,20 @@ def _trade_setup_badge(atm, step, spcl_val=None):
         action_class = "trade-buy" if action == "B" else "trade-sell"
         return f"{strike_html}<span class='{action_class}'>({action})</span>[{qty}]"
 
-    ce_300_fmt = format_setup_item(ce_300, "B", 1, spcl_val)
-    ce_500_fmt = format_setup_item(ce_500, "S", 3, spcl_val)
-    ce_1300_fmt = format_setup_item(ce_1300, "B", 2, spcl_val)
-    pe_300_fmt = format_setup_item(pe_300, "B", 1, spcl_val)
-    pe_500_fmt = format_setup_item(pe_500, "S", 3, spcl_val)
-    pe_1300_fmt = format_setup_item(pe_1300, "B", 2, spcl_val)
+    ce_400_fmt = format_setup_item(ce_400, "B", 1, spcl_val)
+    ce_600_fmt = format_setup_item(ce_600, "S", 3, spcl_val)
+    ce_1400_fmt = format_setup_item(ce_1400, "B", ce_1400_qty, spcl_val)
+    pe_400_fmt = format_setup_item(pe_400, "B", 1, spcl_val)
+    pe_600_fmt = format_setup_item(pe_600, "S", 3, spcl_val)
+    pe_1400_fmt = format_setup_item(pe_1400, "B", pe_1400_qty, spcl_val)
 
     setup_html = (f"<div class='trade-setup-wrap'>"
                   f"<span class='trade-setup-label'>Setup</span>"
                   f"<div class='trade-side trade-ce'>"
-                  f"CE: {ce_300_fmt} | {ce_500_fmt} | {ce_1300_fmt}"
+                  f"CE: {ce_400_fmt} | {ce_600_fmt} | {ce_1400_fmt}"
                   f"</div>"
                   f"<div class='trade-side trade-pe'>"
-                  f"PE: {pe_300_fmt} | {pe_500_fmt} | {pe_1300_fmt}"
+                  f"PE: {pe_400_fmt} | {pe_600_fmt} | {pe_1400_fmt}"
                   f"</div>"
                   f"</div>")
     return setup_html
@@ -1124,7 +1180,9 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     # Add Trade Setup next to SPCL VAL (with SPCL VAL comparison and highlights)
     if atm is not None and step is not None:
         badges += "<span class='pcr-divider'>│</span>"
-        badges += _trade_setup_badge(atm, step, spcl_val)
+        # Calculate risk-balanced quantities for far legs
+        adjusted_qties = _calculate_qty_adjustment(atm, ce_map, pe_map)
+        badges += _trade_setup_badge(atm, step, spcl_val, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'])
 
     html = f"<div class='pcr-row'>{badges}"
 
