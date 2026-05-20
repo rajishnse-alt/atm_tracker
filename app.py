@@ -1143,6 +1143,66 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map):
 
     return adjusted_qties
 
+def _risk_profile_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, total_capital=1):
+    """
+    Render a compact loss profile chart showing max losses at extreme CE and PE strikes.
+
+    Displays:
+    - CE extreme loss at ATM+1400 strike (in rupees and % of capital)
+    - PE extreme loss at ATM-1400 strike (in rupees and % of capital)
+    """
+    # Get LTPs for short strikes (where max loss occurs)
+    ce_short_strike = atm + 600
+    pe_short_strike = atm - 600
+
+    if ce_map:
+        ce_short_ltp = float(ce_map.get(ce_short_strike, ce_map.get(str(ce_short_strike), 0)) or 0)
+    else:
+        ce_short_ltp = 0
+
+    if pe_map:
+        pe_short_ltp = float(pe_map.get(pe_short_strike, pe_map.get(str(pe_short_strike), 0)) or 0)
+    else:
+        pe_short_ltp = 0
+
+    # Max loss at extreme strikes (spread width × quantity × 100)
+    # For iron condor: max loss = (extreme_strike - short_strike) × quantity × 100
+    ce_extreme_strike = atm + 1400
+    pe_extreme_strike = atm - 1400
+
+    ce_max_loss = (ce_extreme_strike - ce_short_strike) * 100 * ce_1400_qty  # 80,000 × qty
+    pe_max_loss = (pe_extreme_strike - pe_short_strike) * 100 * pe_1400_qty  # 80,000 × qty
+
+    ce_loss_pct = (ce_max_loss / total_capital * 100) if total_capital > 0 else 0
+    pe_loss_pct = (pe_max_loss / total_capital * 100) if total_capital > 0 else 0
+
+    # Determine colors based on loss %
+    ce_color = "#00e676" if ce_loss_pct < 1.2 else "#FFA500" if ce_loss_pct < 1.8 else "#FF6B6B"
+    pe_color = "#00e676" if pe_loss_pct < 1.2 else "#FFA500" if pe_loss_pct < 1.8 else "#FF6B6B"
+
+    # Calculate bar widths (max 60px for 100% capital loss)
+    ce_bar_width = min(60, (ce_loss_pct / 5) * 60)  # Scale 0-5% to 0-60px
+    pe_bar_width = min(60, (pe_loss_pct / 5) * 60)
+
+    chart_html = (f"<div style='font-size:10px; margin-top:3px; padding:4px; background:#1a1a1a; border-radius:3px;'>"
+                  f"<div style='margin-bottom:2px;'>"
+                  f"<span style='color:#888;'>CE Extreme (₹{int(ce_max_loss):,}</span> "
+                  f"<span style='color:{ce_color};'>{ce_loss_pct:.2f}%)</span>"
+                  f"<div style='height:8px; background:#333; border-radius:2px; margin-top:1px;'>"
+                  f"<div style='height:100%; width:{ce_bar_width}px; background:{ce_color}; border-radius:2px;'></div>"
+                  f"</div>"
+                  f"</div>"
+                  f"<div>"
+                  f"<span style='color:#888;'>PE Extreme (₹{int(pe_max_loss):,}</span> "
+                  f"<span style='color:{pe_color};'>{pe_loss_pct:.2f}%)</span>"
+                  f"<div style='height:8px; background:#333; border-radius:2px; margin-top:1px;'>"
+                  f"<div style='height:100%; width:{pe_bar_width}px; background:{pe_color}; border-radius:2px;'></div>"
+                  f"</div>"
+                  f"</div>"
+                  f"</div>")
+
+    return chart_html
+
 def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2, loss_pct=0):
     """
     Render predefined trade setup showing CE and PE side positions with Buy/Sell and quantities.
@@ -1222,11 +1282,35 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         badges += _spcl_badge(spcl_val, "SPCL VAL", bullish=bullish)
 
     # Add Trade Setup next to SPCL VAL (with SPCL VAL comparison and highlights)
+    risk_chart_html = ""
     if atm is not None and step is not None:
         badges += "<span class='pcr-divider'>│</span>"
         # Calculate risk-balanced quantities for far legs (capped at 1.8% max loss)
         adjusted_qties = _calculate_qty_adjustment(atm, ce_map, pe_map)
         badges += _trade_setup_badge(atm, step, spcl_val, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], adjusted_qties['loss_pct'])
+
+        # Calculate capital for risk profile chart
+        base_qties = {'400': 1, '600': 3, '1400': 2}
+        ce_ltps = {}
+        pe_ltps = {}
+        for offset in ['400', '600', '1400']:
+            ce_strike = atm + int(offset)
+            pe_strike = atm - int(offset)
+            if ce_map:
+                ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
+            else:
+                ce_ltps[offset] = 0
+            if pe_map:
+                pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+            else:
+                pe_ltps[offset] = 0
+
+        ce_capital = (ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']) - (ce_ltps['600'] * base_qties['600'])
+        pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
+        total_capital = ce_capital + pe_capital
+
+        # Generate risk profile chart
+        risk_chart_html = _risk_profile_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], max(total_capital, 1))
 
     html = f"<div class='pcr-row'>{badges}"
 
@@ -1236,6 +1320,10 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         html += f"<span class='pcr-divider'>│</span>{valid_strikes}"
 
     html += "</div>"
+
+    # Add risk profile chart below main row
+    if risk_chart_html:
+        html += f"<div style='margin-top:2px; margin-left:8px;'>{risk_chart_html}</div>"
 
     # Add OI Change row showing ATM Calls and Puts direction
     if atm_ce_oi_chg is not None and atm_pe_oi_chg is not None:
