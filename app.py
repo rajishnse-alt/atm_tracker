@@ -1236,7 +1236,7 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map, opening_ce_prices=None, openi
 
     return adjusted_qties
 
-def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, days_to_expiry=1):
+def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, days_to_expiry=1, symbol='NIFTY'):
     """
     Generate SVG payoff/P&L chart showing profit/loss across strike range.
 
@@ -1246,15 +1246,17 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
     - Proper scaling and axis labels
     - Loss amounts at sold strikes (ATM±600)
 
+    Uses trade setup quantities (1, 3, adjusted_qty) directly.
+
     Parameters:
     -----------
     opening_ce_prices : dict, optional
         CE strike actual bought/entry prices. If provided, uses these for P&L calcs instead of Wednesday opens.
-        Format: {24000: 67.5, 24400: 45.0, 25400: 2.5}
+        Format: {24000: {'price': 67.5, 'is_short': False}}
 
     opening_pe_prices : dict, optional
         PE strike actual bought/entry prices. If provided, uses these for P&L calcs instead of Wednesday opens.
-        Format: {23600: 85.0, 23200: 50.0, 22200: 5.5}
+        Format: {23600: {'price': 85.0, 'is_short': False}}
 
     If bought prices not provided, uses Wednesday opening prices from ce_map/pe_map (default).
     """
@@ -1322,26 +1324,29 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
             # Predict CE prices at strike s using BS
             ce_price_at_s, _, _ = predict_extreme_prices(atm, s, ce_map, pe_map, atm, days_to_expiry)
 
-            # CE 400 leg (LONG)
+            # CE 400 leg (LONG) - use trade setup qty
             ce_400_entry = opening_ce_prices.get(ce_400_strike, {}).get('price', ce_ltps.get('400', 0)) if opening_ce_prices else ce_ltps.get('400', 0)
+            ce_400_qty = base_qties['400']
             if ce_price_at_s > 0 and ce_400_entry > 0:
-                ce_400_payoff = (ce_price_at_s - ce_400_entry) * base_qties['400'] * 100
+                ce_400_payoff = (ce_price_at_s - ce_400_entry) * ce_400_qty
             else:
-                ce_400_payoff = max(0, s - ce_400_strike) * base_qties['400'] * 100 if s > ce_400_strike else 0
+                ce_400_payoff = max(0, s - ce_400_strike) * ce_400_qty if s > ce_400_strike else 0
 
-            # CE 600 leg (SHORT)
+            # CE 600 leg (SHORT) - use trade setup qty
             ce_600_entry = opening_ce_prices.get(ce_600_strike, {}).get('price', ce_ltps.get('600', 0)) if opening_ce_prices else ce_ltps.get('600', 0)
+            ce_600_qty = base_qties['600']
             if ce_price_at_s > 0 and ce_600_entry > 0:
-                ce_600_payoff = -(ce_600_entry - ce_price_at_s) * base_qties['600'] * 100
+                ce_600_payoff = -(ce_600_entry - ce_price_at_s) * ce_600_qty
             else:
-                ce_600_payoff = -max(0, s - ce_600_strike) * base_qties['600'] * 100 if s > ce_600_strike else 0
+                ce_600_payoff = -max(0, s - ce_600_strike) * ce_600_qty if s > ce_600_strike else 0
 
-            # CE 1400 leg (LONG)
+            # CE 1400 leg (LONG) - use trade setup qty
             ce_1400_entry = opening_ce_prices.get(ce_1400_strike, {}).get('price', 0) if opening_ce_prices else 0
+            ce_1400_qty_actual = ce_1400_qty
             if ce_price_at_s > 0 and ce_1400_entry > 0:
-                ce_1400_payoff = (ce_price_at_s - ce_1400_entry) * ce_1400_qty * 100
+                ce_1400_payoff = (ce_price_at_s - ce_1400_entry) * ce_1400_qty_actual
             else:
-                ce_1400_payoff = max(0, s - ce_1400_strike) * ce_1400_qty * 100 if s > ce_1400_strike else 0
+                ce_1400_payoff = max(0, s - ce_1400_strike) * ce_1400_qty_actual if s > ce_1400_strike else 0
         except:
             # Fallback to intrinsic value calculation
             ce_400_payoff = max(0, s - ce_400_strike) * base_qties['400'] * 100 if s > ce_400_strike else 0
@@ -1357,26 +1362,29 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
             # Predict PE prices at strike s using BS
             _, pe_price_at_s, _ = predict_extreme_prices(atm, s, ce_map, pe_map, atm, days_to_expiry)
 
-            # PE 400 leg (LONG)
+            # PE 400 leg (LONG) - use trade setup qty
             pe_400_entry = opening_pe_prices.get(pe_400_strike, {}).get('price', pe_ltps.get('400', 0)) if opening_pe_prices else pe_ltps.get('400', 0)
+            pe_400_qty = base_qties['400']
             if pe_price_at_s > 0 and pe_400_entry > 0:
-                pe_400_payoff = (pe_price_at_s - pe_400_entry) * base_qties['400'] * 100
+                pe_400_payoff = (pe_price_at_s - pe_400_entry) * pe_400_qty
             else:
-                pe_400_payoff = max(0, pe_400_strike - s) * base_qties['400'] * 100 if s < pe_400_strike else 0
+                pe_400_payoff = max(0, pe_400_strike - s) * pe_400_qty if s < pe_400_strike else 0
 
-            # PE 600 leg (SHORT)
+            # PE 600 leg (SHORT) - use trade setup qty
             pe_600_entry = opening_pe_prices.get(pe_600_strike, {}).get('price', pe_ltps.get('600', 0)) if opening_pe_prices else pe_ltps.get('600', 0)
+            pe_600_qty = base_qties['600']
             if pe_price_at_s > 0 and pe_600_entry > 0:
-                pe_600_payoff = -(pe_600_entry - pe_price_at_s) * base_qties['600'] * 100
+                pe_600_payoff = -(pe_600_entry - pe_price_at_s) * pe_600_qty
             else:
-                pe_600_payoff = -max(0, pe_600_strike - s) * base_qties['600'] * 100 if s < pe_600_strike else 0
+                pe_600_payoff = -max(0, pe_600_strike - s) * pe_600_qty if s < pe_600_strike else 0
 
-            # PE 1400 leg (LONG)
+            # PE 1400 leg (LONG) - use trade setup qty
             pe_1400_entry = opening_pe_prices.get(pe_1400_strike, {}).get('price', 0) if opening_pe_prices else 0
+            pe_1400_qty_actual = pe_1400_qty
             if pe_price_at_s > 0 and pe_1400_entry > 0:
-                pe_1400_payoff = (pe_price_at_s - pe_1400_entry) * pe_1400_qty * 100
+                pe_1400_payoff = (pe_price_at_s - pe_1400_entry) * pe_1400_qty_actual
             else:
-                pe_1400_payoff = max(0, pe_1400_strike - s) * pe_1400_qty * 100 if s < pe_1400_strike else 0
+                pe_1400_payoff = max(0, pe_1400_strike - s) * pe_1400_qty_actual if s < pe_1400_strike else 0
         except:
             # Fallback to intrinsic value calculation
             pe_400_payoff = max(0, pe_400_strike - s) * base_qties['400'] * 100 if s < pe_400_strike else 0
@@ -1527,6 +1535,8 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
     - For LONG: P&L = (LTP - Entry) × Qty
     - For SHORT: P&L = (Entry - LTP) × Qty
 
+    Quantities from trade setup (1, 3, adjusted_qty) already account for lot size.
+
     Shows:
     - Current P&L at spot (intraday)
     - Probable loss at CE extreme (highest CE strike)
@@ -1558,13 +1568,13 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
         entry_price = ce_data['price']
         is_short = ce_data['is_short']
 
-        # Get quantity for this strike
+        # Get quantity from trade setup (1, 3, or adjusted 1400 qty)
         qty = ce_qty_map.get(ce_strike, 1)
 
         # Get current LTP
         current_ltp = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else entry_price
 
-        # Calculate P&L
+        # Calculate P&L using trade setup quantities
         if is_short:
             position_pnl = (entry_price - current_ltp) * qty
         else:
@@ -1578,13 +1588,13 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
         entry_price = pe_data['price']
         is_short = pe_data['is_short']
 
-        # Get quantity for this strike
+        # Get quantity from trade setup (1, 3, or adjusted 1400 qty)
         qty = pe_qty_map.get(pe_strike, 1)
 
         # Get current LTP
         current_ltp = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else entry_price
 
-        # Calculate P&L
+        # Calculate P&L using trade setup quantities
         if is_short:
             position_pnl = (entry_price - current_ltp) * qty
         else:
@@ -1814,7 +1824,7 @@ def calculate_days_to_expiry(expiry_date_str, now_ist):
 
 def parse_entry_prices(text_input):
     """
-    Parse entry prices from user text input with buy/sell notation and quantities.
+    Parse entry prices from user text input with buy/sell notation.
 
     Supports formats:
     - CE 24000(B): 65.5    [Bought call]
@@ -1823,6 +1833,11 @@ def parse_entry_prices(text_input):
     - CE 24400 SELL: 45.0  [Sold call]
     - CE 24000: 65.5       [Assumed bought]
     - PE 23600: 85.0
+
+    Quantities are automatically used from trade setup:
+    - ATM±400: 1 lot
+    - ATM±600: 3 lots
+    - ATM±1400: adjusted based on risk balance
 
     Returns:
     --------
@@ -1937,7 +1952,7 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, symbol, days_to_expiry)
 
         # Generate payoff chart (uses opening prices if provided, with BS-predicted prices)
-        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, days_to_expiry)
+        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, days_to_expiry, symbol)
         risk_chart_html = current_pnl_html + payoff_chart
 
     html = f"<div class='pcr-row'>{badges}"
