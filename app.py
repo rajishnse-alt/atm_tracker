@@ -1354,6 +1354,93 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
     svg += '</svg>'
     return svg
 
+def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None):
+    """
+    Display current running P&L at center (spot) and probable losses at extreme ends.
+
+    Shows:
+    - Current P&L at spot (center)
+    - Probable loss if spot reaches CE extreme (ATM+1400)
+    - Probable loss if spot reaches PE extreme (ATM-1400)
+    """
+    # Get LTPs (use opening prices if provided, else current)
+    ce_ltps = {}
+    pe_ltps = {}
+    base_qties = {'400': 1, '600': 3, '1400': 2}
+
+    for offset in ['400', '600', '1400']:
+        ce_strike = atm + int(offset)
+        pe_strike = atm - int(offset)
+
+        if opening_ce_prices and ce_strike in opening_ce_prices:
+            ce_ltps[offset] = float(opening_ce_prices[ce_strike]) if opening_ce_prices[ce_strike] else 0
+        else:
+            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
+
+        if opening_pe_prices and pe_strike in opening_pe_prices:
+            pe_ltps[offset] = float(opening_pe_prices[pe_strike]) if opening_pe_prices[pe_strike] else 0
+        else:
+            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
+
+    # Calculate net premium
+    ce_debit = ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']
+    ce_credit = ce_ltps['600'] * base_qties['600']
+    ce_net = ce_debit - ce_credit
+
+    pe_debit = pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']
+    pe_credit = pe_ltps['600'] * base_qties['600']
+    pe_net = pe_debit - pe_credit
+
+    total_net_premium = ce_net + pe_net
+
+    # Calculate P&L at spot (current center)
+    def calc_pnl_at_spot(spot_price):
+        ce_400_pnl = max(0, spot_price - (atm + 400)) * base_qties['400'] * 100 if spot_price > atm + 400 else 0
+        ce_600_pnl = -max(0, spot_price - (atm + 600)) * base_qties['600'] * 100 if spot_price > atm + 600 else 0
+        ce_1400_pnl = max(0, spot_price - (atm + 1400)) * ce_1400_qty * 100 if spot_price > atm + 1400 else 0
+
+        pe_400_pnl = max(0, (atm - 400) - spot_price) * base_qties['400'] * 100 if spot_price < atm - 400 else 0
+        pe_600_pnl = -max(0, (atm - 600) - spot_price) * base_qties['600'] * 100 if spot_price < atm - 600 else 0
+        pe_1400_pnl = max(0, (atm - 1400) - spot_price) * pe_1400_qty * 100 if spot_price < atm - 1400 else 0
+
+        return (ce_400_pnl + ce_600_pnl + ce_1400_pnl +
+               pe_400_pnl + pe_600_pnl + pe_1400_pnl -
+               total_net_premium)
+
+    # Current P&L at spot
+    current_pnl = calc_pnl_at_spot(atm)
+
+    # Max losses at extremes
+    ce_extreme_loss = calc_pnl_at_spot(atm + 1400)
+    pe_extreme_loss = calc_pnl_at_spot(atm - 1400)
+
+    # Color coding
+    current_color = "#00e676" if current_pnl >= 0 else "#FF6B6B"
+    ce_color = "#FF6B6B" if ce_extreme_loss < 0 else "#00e676"
+    pe_color = "#FF6B6B" if pe_extreme_loss < 0 else "#00e676"
+
+    # Format numbers
+    current_str = f"₹{int(current_pnl):,}" if current_pnl >= 0 else f"₹{int(current_pnl):,}"
+    ce_str = f"₹{int(ce_extreme_loss):,}" if ce_extreme_loss >= 0 else f"₹{int(ce_extreme_loss):,}"
+    pe_str = f"₹{int(pe_extreme_loss):,}" if pe_extreme_loss >= 0 else f"₹{int(pe_extreme_loss):,}"
+
+    html = (f"<div style='display:flex; gap:12px; margin-top:4px; font-size:11px;'>"
+            f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {current_color}; padding:6px 8px; border-radius:3px;'>"
+            f"<div style='color:#888; font-size:9px;'>CENTER (Spot)</div>"
+            f"<div style='color:{current_color}; font-weight:bold; font-size:12px;'>{current_str}</div>"
+            f"</div>"
+            f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {ce_color}; padding:6px 8px; border-radius:3px;'>"
+            f"<div style='color:#888; font-size:9px;'>CE EXTREME (ATM+1400)</div>"
+            f"<div style='color:{ce_color}; font-weight:bold; font-size:12px;'>{ce_str}</div>"
+            f"</div>"
+            f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {pe_color}; padding:6px 8px; border-radius:3px;'>"
+            f"<div style='color:#888; font-size:9px;'>PE EXTREME (ATM-1400)</div>"
+            f"<div style='color:{pe_color}; font-weight:bold; font-size:12px;'>{pe_str}</div>"
+            f"</div>"
+            f"</div>")
+
+    return html
+
 def _risk_profile_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, total_capital=1):
     """
     Render a compact loss profile chart showing max losses at extreme CE and PE strikes.
@@ -1580,9 +1667,12 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
         total_capital = ce_capital + pe_capital
 
+        # Generate current P&L display
+        current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
+
         # Generate payoff chart (uses opening prices if provided)
         payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
-        risk_chart_html = payoff_chart
+        risk_chart_html = current_pnl_html + payoff_chart
 
     html = f"<div class='pcr-row'>{badges}"
 
@@ -1852,6 +1942,24 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     bullish = not result.get("bearish", False)  # Invert bearish to get bullish
     ce_map = result.get("ce_map")  # Complete CE strikes map
     pe_map = result.get("pe_map")  # Complete PE strikes map
+
+    # ── Entry Price Input (Optional - to lock P&L to specific entry prices) ──────
+    opening_ce_prices = None
+    opening_pe_prices = None
+
+    with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[sym]}", expanded=False):
+        entry_prices_text = st.text_area(
+            "Paste entry prices (one per line: CE/PE Strike: Price)",
+            placeholder="CE 24000: 67.5\nCE 24400: 45.0\nPE 23600: 85.0\nPE 23200: 50.0",
+            height=80,
+            key=f"entry_prices_{sym}_{selected}"
+        )
+
+        if entry_prices_text.strip():
+            opening_ce_prices, opening_pe_prices = parse_entry_prices(entry_prices_text)
+            if opening_ce_prices or opening_pe_prices:
+                st.success(f"✓ Locked: {len(opening_ce_prices)} CE + {len(opening_pe_prices)} PE strikes")
+
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -1861,7 +1969,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -2142,6 +2250,23 @@ def show_replay_page(access_token, vix_info, now):
             ce_map = result.get("ce_map")  # Complete CE strikes map
             pe_map = result.get("pe_map")  # Complete PE strikes map
 
+            # ── Entry Price Input (Optional - to lock P&L to specific entry prices) ──────
+            opening_ce_prices = None
+            opening_pe_prices = None
+
+            with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[symbol]} Replay", expanded=False):
+                entry_prices_text = st.text_area(
+                    "Paste entry prices (one per line: CE/PE Strike: Price)",
+                    placeholder="CE 24000: 67.5\nCE 24400: 45.0\nPE 23600: 85.0\nPE 23200: 50.0",
+                    height=80,
+                    key=f"replay_entry_prices_{symbol}_{selected_expiry}"
+                )
+
+                if entry_prices_text.strip():
+                    opening_ce_prices, opening_pe_prices = parse_entry_prices(entry_prices_text)
+                    if opening_ce_prices or opening_pe_prices:
+                        st.success(f"✓ Locked: {len(opening_ce_prices)} CE + {len(opening_pe_prices)} PE strikes")
+
             st.markdown(
                 f"<div class='inst-card'>"
                 f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -2151,7 +2276,7 @@ def show_replay_page(access_token, vix_info, now):
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices)}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
