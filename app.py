@@ -1559,12 +1559,15 @@ def _trade_setup_badge(atm, step, spcl_val=None, ce_1400_qty=2, pe_1400_qty=2, l
 
 def parse_entry_prices(text_input):
     """
-    Parse entry prices from user text input.
+    Parse entry prices from user text input with buy/sell notation.
 
     Supports formats:
-    - CE 24000: 65.5
+    - CE 24000(B): 65.5    [Bought call]
+    - CE 24400(S): 45.0    [Sold call]
+    - CE 24000 BUY: 65.5   [Bought call]
+    - CE 24400 SELL: 45.0  [Sold call]
+    - CE 24000: 65.5       [Assumed bought]
     - PE 23600: 85.0
-    - 24000: 65.5 (auto-detect based on value)
 
     Returns:
     --------
@@ -1584,7 +1587,7 @@ def parse_entry_prices(text_input):
             continue
 
         try:
-            # Parse "CE 24000: 65.5" or "PE 23600: 85" or "24000: 65.5"
+            # Parse different formats
             parts = line.split(':')
             if len(parts) != 2:
                 continue
@@ -1592,22 +1595,27 @@ def parse_entry_prices(text_input):
             label_strike = parts[0].strip()
             price = float(parts[1].strip())
 
+            # Remove (B)/(S) or BUY/SELL notation
+            label_strike_clean = label_strike.replace('(B)', '').replace('(S)', '').replace('BUY', '').replace('SELL', '').strip()
+
             # Detect CE/PE and extract strike
-            if label_strike.startswith('CE'):
-                strike = int(label_strike.replace('CE', '').strip())
+            if label_strike_clean.startswith('CE'):
+                strike = int(label_strike_clean.replace('CE', '').strip())
                 ce_prices[strike] = price
-            elif label_strike.startswith('PE'):
-                strike = int(label_strike.replace('PE', '').strip())
+            elif label_strike_clean.startswith('PE'):
+                strike = int(label_strike_clean.replace('PE', '').strip())
                 pe_prices[strike] = price
             else:
                 # Try to parse as just strike number
-                strike = int(label_strike)
-                # Auto-detect based on value (heuristic: if price > 50, likely CE, else PE)
-                # Or use first digit to determine
-                if price > 50:
-                    ce_prices[strike] = price
-                else:
-                    pe_prices[strike] = price
+                try:
+                    strike = int(label_strike_clean)
+                    # Auto-detect based on value
+                    if price > 50:
+                        ce_prices[strike] = price
+                    else:
+                        pe_prices[strike] = price
+                except ValueError:
+                    continue
 
         except (ValueError, IndexError):
             continue
@@ -1947,13 +1955,26 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     opening_ce_prices = None
     opening_pe_prices = None
 
-    with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[sym]}", expanded=False):
+    # Initialize session state for this symbol+expiry combo
+    state_key = f"entry_prices_{sym}_{selected}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = ""
+
+    with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[sym]} ({selected})", expanded=False):
+        st.markdown("**Format:** `CE/PE Strike(B/S): Price` or `CE/PE Strike: Price`")
+        st.markdown("Examples:")
+        st.code("CE 24000(B): 67.5\nCE 24400(S): 45.0\nPE 23600(B): 85.0\nPE 23200(S): 50.0")
+
         entry_prices_text = st.text_area(
-            "Paste entry prices (one per line: CE/PE Strike: Price)",
-            placeholder="CE 24000: 67.5\nCE 24400: 45.0\nPE 23600: 85.0\nPE 23200: 50.0",
-            height=80,
-            key=f"entry_prices_{sym}_{selected}"
+            "Paste entry prices (persists till expiry changes)",
+            value=st.session_state[state_key],
+            placeholder="CE 24000(B): 67.5\nCE 24400(S): 45.0\nPE 23600(B): 85.0\nPE 23200(S): 50.0",
+            height=100,
+            key=f"ta_{sym}_{selected}"
         )
+
+        # Save to session state
+        st.session_state[state_key] = entry_prices_text
 
         if entry_prices_text.strip():
             opening_ce_prices, opening_pe_prices = parse_entry_prices(entry_prices_text)
@@ -2254,13 +2275,26 @@ def show_replay_page(access_token, vix_info, now):
             opening_ce_prices = None
             opening_pe_prices = None
 
-            with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[symbol]} Replay", expanded=False):
+            # Initialize session state for replay
+            replay_state_key = f"replay_entry_prices_{symbol}_{selected_expiry}"
+            if replay_state_key not in st.session_state:
+                st.session_state[replay_state_key] = ""
+
+            with st.expander(f"🔒 Lock Entry Prices — {DISPLAY_NAME[symbol]} Replay ({selected_expiry})", expanded=False):
+                st.markdown("**Format:** `CE/PE Strike(B/S): Price` or `CE/PE Strike: Price`")
+                st.markdown("Examples:")
+                st.code("CE 24000(B): 67.5\nCE 24400(S): 45.0\nPE 23600(B): 85.0\nPE 23200(S): 50.0")
+
                 entry_prices_text = st.text_area(
-                    "Paste entry prices (one per line: CE/PE Strike: Price)",
-                    placeholder="CE 24000: 67.5\nCE 24400: 45.0\nPE 23600: 85.0\nPE 23200: 50.0",
-                    height=80,
-                    key=f"replay_entry_prices_{symbol}_{selected_expiry}"
+                    "Paste entry prices (persists till expiry changes)",
+                    value=st.session_state[replay_state_key],
+                    placeholder="CE 24000(B): 67.5\nCE 24400(S): 45.0\nPE 23600(B): 85.0\nPE 23200(S): 50.0",
+                    height=100,
+                    key=f"replay_ta_{symbol}_{selected_expiry}"
                 )
+
+                # Save to session state
+                st.session_state[replay_state_key] = entry_prices_text
 
                 if entry_prices_text.strip():
                     opening_ce_prices, opening_pe_prices = parse_entry_prices(entry_prices_text)
