@@ -1225,6 +1225,42 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
     zero_y = margin + plot_height / 2
     svg += f'<line x1="{margin}" y1="{zero_y}" x2="{width-margin}" y2="{zero_y}" stroke="#444" stroke-width="1" stroke-dasharray="2,2"/>'
 
+    # Mark key strike levels
+    # Short strikes (ATM±600) - where max loss occurs
+    ce_short = atm + 600
+    pe_short = atm - 600
+
+    # Long extreme legs (ATM±1400)
+    ce_extreme = atm + 1400
+    pe_extreme = atm - 1400
+
+    # Draw vertical lines for key strikes with labels
+    for strike, label, color, style in [
+        (pe_extreme, "PE:1400", "#FF9999", "dotted"),
+        (pe_short, "PE:600(S)", "#FF6B6B", "solid"),
+        (ce_short, "CE:600(S)", "#4CAF50", "solid"),
+        (ce_extreme, "CE:1400", "#99FF99", "dotted")
+    ]:
+        x = margin + (strike - min(strike_range)) * x_scale
+        if margin <= x <= width - margin:
+            svg += f'<line x1="{x}" y1="{margin}" x2="{x}" y2="{margin+plot_height}" stroke="{color}" stroke-width="0.8" opacity="0.4" stroke-dasharray="{("3,3" if style == "dotted" else "0")}"/>'
+            # Add label at top
+            label_y = margin - 8
+            svg += f'<text x="{x}" y="{label_y}" font-size="7" fill="{color}" text-anchor="middle" opacity="0.6">{label}</text>'
+
+    # Find and mark breakeven points
+    breakevens = []
+    for i in range(len(payoff_points) - 1):
+        pnl1 = payoff_points[i][1]
+        pnl2 = payoff_points[i + 1][1]
+        if pnl1 * pnl2 < 0:  # Sign change = breakeven crossed
+            breakevens.append((payoff_points[i][0] + payoff_points[i + 1][0]) / 2)
+
+    for be_strike in breakevens:
+        x = margin + (be_strike - min(strike_range)) * x_scale
+        if margin <= x <= width - margin:
+            svg += f'<circle cx="{x}" cy="{zero_y}" r="2" fill="#FFA500" opacity="0.7"/>'
+
     # Draw payoff curve and fill areas
     points_str = ""
     for i, (strike, pnl) in enumerate(payoff_points):
