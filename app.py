@@ -4,6 +4,8 @@ import math
 import time
 from datetime import datetime
 import pytz
+from scipy.stats import norm
+from scipy.optimize import brentq
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -299,6 +301,93 @@ def fetch_vix(token):
     return st.session_state.get(cache_key)
 
 # ─────────────────────────────────────────────
+# BLACK-SCHOLES PRICING
+# ─────────────────────────────────────────────
+def bs_call(S, K, T, r, sigma):
+    """Black-Scholes call option price."""
+    if T <= 0 or sigma <= 0:
+        return max(S - K, 0)
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+
+def bs_put(S, K, T, r, sigma):
+    """Black-Scholes put option price."""
+    if T <= 0 or sigma <= 0:
+        return max(K - S, 0)
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+def calculate_implied_volatility(option_price, S, K, T, r, is_call=True):
+    """Calculate implied volatility using Brent's method."""
+    if option_price <= 0 or T <= 0:
+        return 0.15  # Default to 15% if cannot calculate
+
+    def objective(sigma):
+        if is_call:
+            return bs_call(S, K, T, r, sigma) - option_price
+        else:
+            return bs_put(S, K, T, r, sigma) - option_price
+
+    try:
+        # IV typically ranges from 0.01 to 3.0 (1% to 300%)
+        iv = brentq(objective, 0.001, 3.0, xtol=1e-4)
+        return iv
+    except (ValueError, RuntimeError):
+        # If brentq fails, return estimated IV
+        return 0.15
+
+def extract_atm_volatility(atm, ce_map, pe_map, atm_strike, days_to_expiry=1, risk_free_rate=0.06):
+    """
+    Extract implied volatility from ATM options.
+    Uses average of call and put IV for robustness.
+    """
+    # Convert days to years
+    T = max(days_to_expiry / 365.0, 0.001)
+
+    # Get ATM option prices
+    ce_atm_price = float(ce_map.get(atm_strike, 0)) or 0
+    pe_atm_price = float(pe_map.get(atm_strike, 0)) or 0
+
+    if ce_atm_price <= 0 and pe_atm_price <= 0:
+        return 0.20  # Default to 20% if no ATM data
+
+    atm_iv = 0
+    count = 0
+
+    # Calculate IV from ATM call
+    if ce_atm_price > 0:
+        ce_iv = calculate_implied_volatility(ce_atm_price, atm_strike, atm_strike, T, risk_free_rate, is_call=True)
+        atm_iv += ce_iv
+        count += 1
+
+    # Calculate IV from ATM put
+    if pe_atm_price > 0:
+        pe_iv = calculate_implied_volatility(pe_atm_price, atm_strike, atm_strike, T, risk_free_rate, is_call=False)
+        atm_iv += pe_iv
+        count += 1
+
+    return atm_iv / count if count > 0 else 0.20
+
+def predict_extreme_prices(atm, extreme_strike, ce_map, pe_map, atm_strike, days_to_expiry=1, risk_free_rate=0.06):
+    """
+    Use Black-Scholes to predict CE and PE prices at extreme strikes based on current IV.
+
+    Returns: (predicted_ce_price, predicted_pe_price)
+    """
+    # Extract current IV from ATM
+    sigma = extract_atm_volatility(atm, ce_map, pe_map, atm_strike, days_to_expiry, risk_free_rate)
+
+    # Convert days to years
+    T = max(days_to_expiry / 365.0, 0.001)
+
+    # Predict call and put prices at extreme strike
+    ce_price = bs_call(atm, extreme_strike, T, risk_free_rate, sigma)
+    pe_price = bs_put(atm, extreme_strike, T, risk_free_rate, sigma)
+
+    return ce_price, pe_price, sigma
+
 # FETCH OTM LTPs
 # ─────────────────────────────────────────────
 def fetch_otm_ltps(token, symbol, expiry, atm, step, chain_data):
@@ -1147,7 +1236,7 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map, opening_ce_prices=None, openi
 
     return adjusted_qties
 
-def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None):
+def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, days_to_expiry=1):
     """
     Generate SVG payoff/P&L chart showing profit/loss across strike range.
 
@@ -1203,20 +1292,96 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
 
     total_net_premium = ce_net + pe_net
 
-    # Calculate payoff at different strikes
+    # Calculate payoff at different strikes using Black-Scholes for more realistic pricing
     payoff_points = []
     strike_range = range(atm - 1400, atm + 1401, 100)
 
-    for s in strike_range:
-        # CE side payoff
-        ce_400_payoff = max(0, s - (atm + 400)) * base_qties['400'] * 100 if s > atm + 400 else 0
-        ce_600_payoff = -max(0, s - (atm + 600)) * base_qties['600'] * 100 if s > atm + 600 else 0
-        ce_1400_payoff = max(0, s - (atm + 1400)) * ce_1400_qty * 100 if s > atm + 1400 else 0
+    # Extract IV for BS calculations
+    atm_iv = extract_atm_volatility(atm, ce_map, pe_map, atm, days_to_expiry) if days_to_expiry > 0 else 0.20
+    T = max(days_to_expiry / 365.0, 0.001)
+    r = 0.06
 
-        # PE side payoff
-        pe_400_payoff = max(0, (atm - 400) - s) * base_qties['400'] * 100 if s < atm - 400 else 0
-        pe_600_payoff = -max(0, (atm - 600) - s) * base_qties['600'] * 100 if s < atm - 600 else 0
-        pe_1400_payoff = max(0, (atm - 1400) - s) * pe_1400_qty * 100 if s < atm - 1400 else 0
+    for s in strike_range:
+        # For points far from ATM, use BS predictions; near ATM use intrinsic value
+        # This gives a more realistic payoff curve accounting for time value decay
+
+        ce_400_strike = atm + 400
+        ce_600_strike = atm + 600
+        ce_1400_strike = atm + 1400
+
+        pe_400_strike = atm - 400
+        pe_600_strike = atm - 600
+        pe_1400_strike = atm - 1400
+
+        # CE side P&L (use BS for more realistic pricing)
+        ce_400_payoff = 0
+        ce_600_payoff = 0
+        ce_1400_payoff = 0
+
+        try:
+            # Predict CE prices at strike s using BS
+            ce_price_at_s, _, _ = predict_extreme_prices(atm, s, ce_map, pe_map, atm, days_to_expiry)
+
+            # CE 400 leg (LONG)
+            ce_400_entry = opening_ce_prices.get(ce_400_strike, {}).get('price', ce_ltps.get('400', 0)) if opening_ce_prices else ce_ltps.get('400', 0)
+            if ce_price_at_s > 0 and ce_400_entry > 0:
+                ce_400_payoff = (ce_price_at_s - ce_400_entry) * base_qties['400'] * 100
+            else:
+                ce_400_payoff = max(0, s - ce_400_strike) * base_qties['400'] * 100 if s > ce_400_strike else 0
+
+            # CE 600 leg (SHORT)
+            ce_600_entry = opening_ce_prices.get(ce_600_strike, {}).get('price', ce_ltps.get('600', 0)) if opening_ce_prices else ce_ltps.get('600', 0)
+            if ce_price_at_s > 0 and ce_600_entry > 0:
+                ce_600_payoff = -(ce_600_entry - ce_price_at_s) * base_qties['600'] * 100
+            else:
+                ce_600_payoff = -max(0, s - ce_600_strike) * base_qties['600'] * 100 if s > ce_600_strike else 0
+
+            # CE 1400 leg (LONG)
+            ce_1400_entry = opening_ce_prices.get(ce_1400_strike, {}).get('price', 0) if opening_ce_prices else 0
+            if ce_price_at_s > 0 and ce_1400_entry > 0:
+                ce_1400_payoff = (ce_price_at_s - ce_1400_entry) * ce_1400_qty * 100
+            else:
+                ce_1400_payoff = max(0, s - ce_1400_strike) * ce_1400_qty * 100 if s > ce_1400_strike else 0
+        except:
+            # Fallback to intrinsic value calculation
+            ce_400_payoff = max(0, s - ce_400_strike) * base_qties['400'] * 100 if s > ce_400_strike else 0
+            ce_600_payoff = -max(0, s - ce_600_strike) * base_qties['600'] * 100 if s > ce_600_strike else 0
+            ce_1400_payoff = max(0, s - ce_1400_strike) * ce_1400_qty * 100 if s > ce_1400_strike else 0
+
+        # PE side P&L (use BS for more realistic pricing)
+        pe_400_payoff = 0
+        pe_600_payoff = 0
+        pe_1400_payoff = 0
+
+        try:
+            # Predict PE prices at strike s using BS
+            _, pe_price_at_s, _ = predict_extreme_prices(atm, s, ce_map, pe_map, atm, days_to_expiry)
+
+            # PE 400 leg (LONG)
+            pe_400_entry = opening_pe_prices.get(pe_400_strike, {}).get('price', pe_ltps.get('400', 0)) if opening_pe_prices else pe_ltps.get('400', 0)
+            if pe_price_at_s > 0 and pe_400_entry > 0:
+                pe_400_payoff = (pe_price_at_s - pe_400_entry) * base_qties['400'] * 100
+            else:
+                pe_400_payoff = max(0, pe_400_strike - s) * base_qties['400'] * 100 if s < pe_400_strike else 0
+
+            # PE 600 leg (SHORT)
+            pe_600_entry = opening_pe_prices.get(pe_600_strike, {}).get('price', pe_ltps.get('600', 0)) if opening_pe_prices else pe_ltps.get('600', 0)
+            if pe_price_at_s > 0 and pe_600_entry > 0:
+                pe_600_payoff = -(pe_600_entry - pe_price_at_s) * base_qties['600'] * 100
+            else:
+                pe_600_payoff = -max(0, pe_600_strike - s) * base_qties['600'] * 100 if s < pe_600_strike else 0
+
+            # PE 1400 leg (LONG)
+            pe_1400_entry = opening_pe_prices.get(pe_1400_strike, {}).get('price', 0) if opening_pe_prices else 0
+            if pe_price_at_s > 0 and pe_1400_entry > 0:
+                pe_1400_payoff = (pe_price_at_s - pe_1400_entry) * pe_1400_qty * 100
+            else:
+                pe_1400_payoff = max(0, pe_1400_strike - s) * pe_1400_qty * 100 if s < pe_1400_strike else 0
+        except:
+            # Fallback to intrinsic value calculation
+            pe_400_payoff = max(0, pe_400_strike - s) * base_qties['400'] * 100 if s < pe_400_strike else 0
+            pe_600_payoff = -max(0, pe_600_strike - s) * base_qties['600'] * 100 if s < pe_600_strike else 0
+            pe_1400_payoff = max(0, pe_1400_strike - s) * pe_1400_qty * 100 if s < pe_1400_strike else 0
 
         total_payoff = (ce_400_payoff + ce_600_payoff + ce_1400_payoff +
                        pe_400_payoff + pe_600_payoff + pe_1400_payoff -
@@ -1354,65 +1519,121 @@ def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_
     svg += '</svg>'
     return svg
 
-def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY'):
+def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY', days_to_expiry=1):
     """
     Display current running P&L at center (spot) and probable losses at extreme ends.
 
-    Works with both standard structure and custom entry strikes.
+    P&L Formula (simple):
+    - For LONG: P&L = (LTP - Entry) × Qty
+    - For SHORT: P&L = (Entry - LTP) × Qty
 
     Shows:
-    - Current P&L at spot (center)
+    - Current P&L at spot (intraday)
     - Probable loss at CE extreme (highest CE strike)
     - Probable loss at PE extreme (lowest PE strike)
     """
-    # If custom entry prices provided, use those directly
-    if opening_ce_prices and opening_pe_prices:
-        ce_strikes_prices = opening_ce_prices
-        pe_strikes_prices = opening_pe_prices
-    else:
-        # Use standard structure (ATM±400, ±600, ±1400)
-        ce_strikes_prices = {}
-        pe_strikes_prices = {}
-        for offset in [400, 600, 1400]:
-            ce_strike = atm + offset
-            pe_strike = atm - offset
-            ce_strikes_prices[ce_strike] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else 0
-            pe_strikes_prices[pe_strike] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else 0
+    if not opening_ce_prices or not opening_pe_prices:
+        return ""  # No entry prices provided, skip display
 
-    # Calculate total net premium (sum of all long premiums minus short premiums)
-    # Assumption: prices in user input are entry prices, standard qty is 1 lot each unless adjusted
-    total_premium = sum(ce_strikes_prices.values()) + sum(pe_strikes_prices.values())
+    # Define trade setup strikes and quantities
+    ce_400 = atm + 400
+    ce_600 = atm + 600
+    ce_1400 = atm + 1400
 
-    # Get the lot size for this symbol
-    lot_size = get_lot_size(symbol)
+    pe_400 = atm - 400
+    pe_600 = atm - 600
+    pe_1400 = atm - 1400
 
-    # Calculate P&L at any spot price
-    def calc_pnl_at_spot(spot_price):
-        pnl = -total_premium * lot_size  # Start with negative premium paid (adjusted for lot size)
+    # Map strikes to quantities
+    ce_qty_map = {ce_400: 1, ce_600: 3, ce_1400: ce_1400_qty}
+    pe_qty_map = {pe_400: 1, pe_600: 3, pe_1400: pe_1400_qty}
 
-        # Calculate payoff for each CE strike
-        for ce_strike, ce_ltp in ce_strikes_prices.items():
-            # Assume long calls (bought) - benefit from upside
-            intrinsic = max(0, spot_price - ce_strike) * lot_size
-            pnl += intrinsic - (ce_ltp * lot_size)
+    # Get current LTPs from ce_map/pe_map
+    current_pnl = 0
+    ce_pnl_list = []
+    pe_pnl_list = []
 
-        # Calculate payoff for each PE strike
-        for pe_strike, pe_ltp in pe_strikes_prices.items():
-            # Assume long puts (bought) - benefit from downside
-            intrinsic = max(0, pe_strike - spot_price) * lot_size
-            pnl += intrinsic - (pe_ltp * lot_size)
+    # Calculate P&L for CE positions
+    for ce_strike, ce_data in opening_ce_prices.items():
+        entry_price = ce_data['price']
+        is_short = ce_data['is_short']
 
-        return pnl
+        # Get quantity for this strike
+        qty = ce_qty_map.get(ce_strike, 1)
 
-    # Current P&L at spot
-    current_pnl = calc_pnl_at_spot(atm)
+        # Get current LTP
+        current_ltp = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0) if ce_map else entry_price
 
-    # Max losses at extremes (highest CE and lowest PE)
-    ce_extreme_strike = max(ce_strikes_prices.keys()) if ce_strikes_prices else atm + 1400
-    pe_extreme_strike = min(pe_strikes_prices.keys()) if pe_strikes_prices else atm - 1400
+        # Calculate P&L
+        if is_short:
+            position_pnl = (entry_price - current_ltp) * qty
+        else:
+            position_pnl = (current_ltp - entry_price) * qty
 
-    ce_extreme_loss = calc_pnl_at_spot(ce_extreme_strike)
-    pe_extreme_loss = calc_pnl_at_spot(pe_extreme_strike)
+        current_pnl += position_pnl
+        ce_pnl_list.append((ce_strike, position_pnl))
+
+    # Calculate P&L for PE positions
+    for pe_strike, pe_data in opening_pe_prices.items():
+        entry_price = pe_data['price']
+        is_short = pe_data['is_short']
+
+        # Get quantity for this strike
+        qty = pe_qty_map.get(pe_strike, 1)
+
+        # Get current LTP
+        current_ltp = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0) if pe_map else entry_price
+
+        # Calculate P&L
+        if is_short:
+            position_pnl = (entry_price - current_ltp) * qty
+        else:
+            position_pnl = (current_ltp - entry_price) * qty
+
+        current_pnl += position_pnl
+        pe_pnl_list.append((pe_strike, position_pnl))
+
+    # Calculate extreme losses using Black-Scholes predictions for ATM±1400 strikes
+    ce_extreme_loss = 0
+    pe_extreme_loss = 0
+
+    # CE Extreme (ATM+1400) - use BS prediction if available
+    ce_extreme_strike = ce_1400
+    if ce_extreme_strike in opening_ce_prices:
+        entry_price = opening_ce_prices[ce_extreme_strike]['price']
+        is_short = opening_ce_prices[ce_extreme_strike]['is_short']
+        qty = ce_qty_map.get(ce_extreme_strike, 1)
+
+        # Predict CE price at extreme strike using Black-Scholes
+        try:
+            predicted_ce_price, _, _ = predict_extreme_prices(atm, ce_extreme_strike, ce_map, pe_map, atm, days_to_expiry)
+            if is_short:
+                ce_extreme_loss = (entry_price - predicted_ce_price) * qty
+            else:
+                ce_extreme_loss = (predicted_ce_price - entry_price) * qty
+        except:
+            # Fallback to minimum from list if BS fails
+            ce_losses = [p[1] for p in ce_pnl_list if p[0] == ce_extreme_strike]
+            ce_extreme_loss = min(ce_losses) if ce_losses else 0
+
+    # PE Extreme (ATM-1400) - use BS prediction if available
+    pe_extreme_strike = pe_1400
+    if pe_extreme_strike in opening_pe_prices:
+        entry_price = opening_pe_prices[pe_extreme_strike]['price']
+        is_short = opening_pe_prices[pe_extreme_strike]['is_short']
+        qty = pe_qty_map.get(pe_extreme_strike, 1)
+
+        # Predict PE price at extreme strike using Black-Scholes
+        try:
+            _, predicted_pe_price, _ = predict_extreme_prices(atm, pe_extreme_strike, ce_map, pe_map, atm, days_to_expiry)
+            if is_short:
+                pe_extreme_loss = (entry_price - predicted_pe_price) * qty
+            else:
+                pe_extreme_loss = (predicted_pe_price - entry_price) * qty
+        except:
+            # Fallback to minimum from list if BS fails
+            pe_losses = [p[1] for p in pe_pnl_list if p[0] == pe_extreme_strike]
+            pe_extreme_loss = min(pe_losses) if pe_losses else 0
 
     # Color coding
     current_color = "#00e676" if current_pnl >= 0 else "#FF6B6B"
@@ -1580,9 +1801,20 @@ def get_lot_size(symbol):
     """Get lot size for a given symbol. Default to 100 if not found."""
     return LOT_SIZES.get(symbol.upper(), 100)
 
+def calculate_days_to_expiry(expiry_date_str, now_ist):
+    """Calculate days remaining until expiry from expiry date string (YYYY-MM-DD)."""
+    try:
+        expiry_dt = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(tzinfo=pytz.timezone('Asia/Kolkata'))
+        # Set expiry time to market close (3:30 PM IST)
+        expiry_dt = expiry_dt.replace(hour=15, minute=30, second=0)
+        days = (expiry_dt - now_ist).total_seconds() / 86400.0
+        return max(days, 0.01)  # Minimum 0.01 days to avoid division by zero
+    except:
+        return 1  # Default to 1 day if parsing fails
+
 def parse_entry_prices(text_input):
     """
-    Parse entry prices from user text input with buy/sell notation.
+    Parse entry prices from user text input with buy/sell notation and quantities.
 
     Supports formats:
     - CE 24000(B): 65.5    [Bought call]
@@ -1594,14 +1826,14 @@ def parse_entry_prices(text_input):
 
     Returns:
     --------
-    (ce_prices_dict, pe_prices_dict) : tuple of dicts
-        {strike: price, ...}
+    (ce_data_dict, pe_data_dict) : tuple of dicts
+        {strike: {'price': float, 'is_short': bool}, ...}
     """
-    ce_prices = {}
-    pe_prices = {}
+    ce_data = {}
+    pe_data = {}
 
     if not text_input or text_input.strip() == "":
-        return ce_prices, pe_prices
+        return ce_data, pe_data
 
     lines = text_input.strip().split('\n')
     for line in lines:
@@ -1618,34 +1850,37 @@ def parse_entry_prices(text_input):
             label_strike = parts[0].strip()
             price = float(parts[1].strip())
 
+            # Detect if SHORT (S) or SELL
+            is_short = '(S)' in label_strike or 'SELL' in label_strike.upper()
+
             # Remove (B)/(S) or BUY/SELL notation
             label_strike_clean = label_strike.replace('(B)', '').replace('(S)', '').replace('BUY', '').replace('SELL', '').strip()
 
             # Detect CE/PE and extract strike
             if label_strike_clean.startswith('CE'):
                 strike = int(label_strike_clean.replace('CE', '').strip())
-                ce_prices[strike] = price
+                ce_data[strike] = {'price': price, 'is_short': is_short}
             elif label_strike_clean.startswith('PE'):
                 strike = int(label_strike_clean.replace('PE', '').strip())
-                pe_prices[strike] = price
+                pe_data[strike] = {'price': price, 'is_short': is_short}
             else:
                 # Try to parse as just strike number
                 try:
                     strike = int(label_strike_clean)
                     # Auto-detect based on value
                     if price > 50:
-                        ce_prices[strike] = price
+                        ce_data[strike] = {'price': price, 'is_short': is_short}
                     else:
-                        pe_prices[strike] = price
+                        pe_data[strike] = {'price': price, 'is_short': is_short}
                 except ValueError:
                     continue
 
         except (ValueError, IndexError):
             continue
 
-    return ce_prices, pe_prices
+    return ce_data, pe_data
 
-def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY'):
+def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY', days_to_expiry=1):
     """
     Render PCR badges with OI change information, SPCL VAL, and trade setup.
     - PCR OI   : based on total open interest (standard)
@@ -1699,10 +1934,10 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         total_capital = ce_capital + pe_capital
 
         # Generate current P&L display (with correct lot size for symbol)
-        current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, symbol)
+        current_pnl_html = _current_pnl_display(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, symbol, days_to_expiry)
 
-        # Generate payoff chart (uses opening prices if provided)
-        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices)
+        # Generate payoff chart (uses opening prices if provided, with BS-predicted prices)
+        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], opening_ce_prices, opening_pe_prices, days_to_expiry)
         risk_chart_html = current_pnl_html + payoff_chart
 
     html = f"<div class='pcr-row'>{badges}"
@@ -2004,16 +2239,19 @@ def render_symbol(access_token, sym, vix_info, now_ist):
             if opening_ce_prices or opening_pe_prices:
                 st.success(f"✓ Locked: {len(opening_ce_prices)} CE + {len(opening_pe_prices)} PE strikes")
 
+    # Calculate days to expiry for Black-Scholes pricing
+    days_to_expiry = calculate_days_to_expiry(selected, now_ist)
+
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
         f"  <div><div class='inst-name'>{DISPLAY_NAME[sym]}</div>"
-        f"       <div class='inst-meta'>EXP {selected}</div></div>"
+        f"       <div class='inst-meta'>EXP {selected} ({days_to_expiry:.1f}d)</div></div>"
         f"  <div style='text-align:right;'>"
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"  </div></div>"
-        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym)}"
+        f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, days_to_expiry)}"
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
@@ -2214,6 +2452,9 @@ def show_replay_page(access_token, vix_info, now):
     # Convert replay_date to string format for API calls
     replay_date_str = replay_date.strftime("%Y-%m-%d") if hasattr(replay_date, 'strftime') else str(replay_date)
 
+    # Create a datetime for replay date in IST timezone for days_to_expiry calculation
+    replay_date_ist = datetime.strptime(replay_date_str, "%Y-%m-%d").replace(tzinfo=pytz.timezone('Asia/Kolkata'))
+
     try:
         candle_data = fetch_intraday_data(access_token, symbol, selected_expiry, int(timeframe.split("-")[0]), replay_date_str)
 
@@ -2324,16 +2565,19 @@ def show_replay_page(access_token, vix_info, now):
                     if opening_ce_prices or opening_pe_prices:
                         st.success(f"✓ Locked: {len(opening_ce_prices)} CE + {len(opening_pe_prices)} PE strikes")
 
+            # Calculate days to expiry for Black-Scholes pricing
+            replay_days_to_expiry = calculate_days_to_expiry(selected_expiry, replay_date_ist)
+
             st.markdown(
                 f"<div class='inst-card'>"
                 f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
                 f"  <div><div class='inst-name'>{DISPLAY_NAME[symbol]}</div>"
-                f"       <div class='inst-meta'>EXP {selected_expiry}</div></div>"
+                f"       <div class='inst-meta'>EXP {selected_expiry} ({replay_days_to_expiry:.1f}d)</div></div>"
                 f"  <div style='text-align:right;'>"
                 f"    <div class='inst-spot'>CE: ₹{ce_close:.2f} | PE: ₹{pe_close:.2f}</div>"
                 f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
                 f"  </div></div>"
-                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym)}"
+                f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, replay_days_to_expiry)}"
                 f"</div>", unsafe_allow_html=True)
 
             st.markdown(f"<div class='refresh-note'>⏱ Replay at {speed} speed (x{speed_multiplier})</div>", unsafe_allow_html=True)
