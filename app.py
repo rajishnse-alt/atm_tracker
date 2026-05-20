@@ -1143,6 +1143,132 @@ def _calculate_qty_adjustment(atm, ce_map, pe_map):
 
     return adjusted_qties
 
+def _payoff_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2):
+    """
+    Generate SVG payoff/P&L chart showing profit/loss across strike range.
+
+    Shows iron condor payoff curve from ATM-1400 to ATM+1400 with:
+    - Red area for losses
+    - Green area for profits
+    - Proper scaling and axis labels
+    """
+    # Get LTPs for all legs
+    ce_ltps = {}
+    pe_ltps = {}
+    base_qties = {'400': 1, '600': 3, '1400': 2}
+
+    for offset in ['400', '600', '1400']:
+        ce_strike = atm + int(offset)
+        pe_strike = atm - int(offset)
+        if ce_map:
+            ce_ltps[offset] = float(ce_map.get(ce_strike, ce_map.get(str(ce_strike), 0)) or 0)
+        else:
+            ce_ltps[offset] = 0
+        if pe_map:
+            pe_ltps[offset] = float(pe_map.get(pe_strike, pe_map.get(str(pe_strike), 0)) or 0)
+        else:
+            pe_ltps[offset] = 0
+
+    # Calculate net premium (debit if positive, credit if negative)
+    ce_debit = ce_ltps['400'] * base_qties['400'] + ce_ltps['1400'] * base_qties['1400']
+    ce_credit = ce_ltps['600'] * base_qties['600']
+    ce_net = ce_debit - ce_credit
+
+    pe_debit = pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']
+    pe_credit = pe_ltps['600'] * base_qties['600']
+    pe_net = pe_debit - pe_credit
+
+    total_net_premium = ce_net + pe_net
+
+    # Calculate payoff at different strikes
+    payoff_points = []
+    strike_range = range(atm - 1400, atm + 1401, 100)
+
+    for s in strike_range:
+        # CE side payoff
+        ce_400_payoff = max(0, s - (atm + 400)) * base_qties['400'] * 100 if s > atm + 400 else 0
+        ce_600_payoff = -max(0, s - (atm + 600)) * base_qties['600'] * 100 if s > atm + 600 else 0
+        ce_1400_payoff = max(0, s - (atm + 1400)) * ce_1400_qty * 100 if s > atm + 1400 else 0
+
+        # PE side payoff
+        pe_400_payoff = max(0, (atm - 400) - s) * base_qties['400'] * 100 if s < atm - 400 else 0
+        pe_600_payoff = -max(0, (atm - 600) - s) * base_qties['600'] * 100 if s < atm - 600 else 0
+        pe_1400_payoff = max(0, (atm - 1400) - s) * pe_1400_qty * 100 if s < atm - 1400 else 0
+
+        total_payoff = (ce_400_payoff + ce_600_payoff + ce_1400_payoff +
+                       pe_400_payoff + pe_600_payoff + pe_1400_payoff -
+                       total_net_premium)
+
+        payoff_points.append((s, total_payoff))
+
+    # Find max profit and max loss for scaling
+    pnls = [p[1] for p in payoff_points]
+    max_profit = max(pnls) if pnls else 0
+    min_loss = min(pnls) if pnls else 0
+    y_max = max(abs(max_profit), abs(min_loss))
+    y_max = max(y_max, 100000)  # Min scale
+
+    # SVG dimensions
+    width, height = 280, 100
+    margin = 25
+    plot_width = width - 2 * margin
+    plot_height = height - 2 * margin
+
+    # Scale factors
+    x_scale = plot_width / (max(strike_range) - min(strike_range))
+    y_scale = plot_height / (2 * y_max)
+
+    # Start SVG
+    svg = f'<svg width="{width}" height="{height}" style="background:#0a0a0a; border:1px solid #333; border-radius:3px;">'
+
+    # Draw zero line (break-even)
+    zero_y = margin + plot_height / 2
+    svg += f'<line x1="{margin}" y1="{zero_y}" x2="{width-margin}" y2="{zero_y}" stroke="#444" stroke-width="1" stroke-dasharray="2,2"/>'
+
+    # Draw payoff curve and fill areas
+    points_str = ""
+    for i, (strike, pnl) in enumerate(payoff_points):
+        x = margin + (strike - min(strike_range)) * x_scale
+        y = zero_y - (pnl * y_scale)
+        points_str += f"{x},{y} "
+
+    # Create polygon for loss area (red) - below zero
+    loss_path = f"M {margin},{zero_y} "
+    for strike, pnl in payoff_points:
+        if pnl < 0:
+            x = margin + (strike - min(strike_range)) * x_scale
+            y = zero_y - (pnl * y_scale)
+            loss_path += f"L {x},{y} "
+    loss_path += f"L {margin + plot_width},{zero_y} Z"
+    svg += f'<path d="{loss_path}" fill="#FF6B6B" opacity="0.3"/>'
+
+    # Create polygon for profit area (green) - above zero
+    profit_path = f"M {margin},{zero_y} "
+    for strike, pnl in payoff_points:
+        if pnl > 0:
+            x = margin + (strike - min(strike_range)) * x_scale
+            y = zero_y - (pnl * y_scale)
+            profit_path += f"L {x},{y} "
+    profit_path += f"L {margin + plot_width},{zero_y} Z"
+    svg += f'<path d="{profit_path}" fill="#00e676" opacity="0.3"/>'
+
+    # Draw payoff curve line
+    svg += f'<polyline points="{points_str}" fill="none" stroke="#00e676" stroke-width="1.5" opacity="0.8"/>'
+
+    # Draw axis labels (simplified)
+    svg += f'<text x="{margin + plot_width/2}" y="{height-5}" font-size="9" fill="#666" text-anchor="middle">ATM-1400 → ATM+1400</text>'
+    svg += f'<text x="5" y="{zero_y-5}" font-size="8" fill="#666">P</text>'
+    svg += f'<text x="5" y="{zero_y+10}" font-size="8" fill="#666">L</text>'
+
+    # Draw max values
+    max_loss_str = f"₹{int(min_loss):,}" if min_loss < 0 else "0"
+    max_profit_str = f"₹{int(max_profit):,}" if max_profit > 0 else "0"
+    svg += f'<text x="{margin+2}" y="{margin-5}" font-size="8" fill="#00e676">{max_profit_str}</text>'
+    svg += f'<text x="{margin+2}" y="{height-margin+10}" font-size="8" fill="#FF6B6B">{max_loss_str}</text>'
+
+    svg += '</svg>'
+    return svg
+
 def _risk_profile_chart(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, total_capital=1):
     """
     Render a compact loss profile chart showing max losses at extreme CE and PE strikes.
@@ -1309,8 +1435,9 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
         pe_capital = (pe_ltps['400'] * base_qties['400'] + pe_ltps['1400'] * base_qties['1400']) - (pe_ltps['600'] * base_qties['600'])
         total_capital = ce_capital + pe_capital
 
-        # Generate risk profile chart
-        risk_chart_html = _risk_profile_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'], max(total_capital, 1))
+        # Generate payoff chart
+        payoff_chart = _payoff_chart(atm, ce_map, pe_map, adjusted_qties['ce_1400_qty'], adjusted_qties['pe_1400_qty'])
+        risk_chart_html = payoff_chart
 
     html = f"<div class='pcr-row'>{badges}"
 
