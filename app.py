@@ -1645,28 +1645,42 @@ def _current_pnl_display(atm, ce_map, pe_map, ce_1400_qty=2, pe_1400_qty=2, open
             pe_losses = [p[1] for p in pe_pnl_list if p[0] == pe_extreme_strike]
             pe_extreme_loss = min(pe_losses) if pe_losses else 0
 
+    # Calculate total entry capital for percentage calculation
+    total_entry_capital = 0
+    for strike, data in opening_ce_prices.items():
+        qty = ce_qty_map.get(strike, 1)
+        total_entry_capital += data['price'] * qty
+    for strike, data in opening_pe_prices.items():
+        qty = pe_qty_map.get(strike, 1)
+        total_entry_capital += data['price'] * qty
+
+    # Calculate percentage changes
+    current_pct = (current_pnl / total_entry_capital * 100) if total_entry_capital > 0 else 0
+    ce_pct = (ce_extreme_loss / total_entry_capital * 100) if total_entry_capital > 0 else 0
+    pe_pct = (pe_extreme_loss / total_entry_capital * 100) if total_entry_capital > 0 else 0
+
     # Color coding
     current_color = "#00e676" if current_pnl >= 0 else "#FF6B6B"
     ce_color = "#FF6B6B" if ce_extreme_loss < 0 else "#00e676"
     pe_color = "#FF6B6B" if pe_extreme_loss < 0 else "#00e676"
 
-    # Format numbers
-    current_str = f"₹{int(current_pnl):,}" if current_pnl >= 0 else f"₹{int(current_pnl):,}"
-    ce_str = f"₹{int(ce_extreme_loss):,}" if ce_extreme_loss >= 0 else f"₹{int(ce_extreme_loss):,}"
-    pe_str = f"₹{int(pe_extreme_loss):,}" if pe_extreme_loss >= 0 else f"₹{int(pe_extreme_loss):,}"
+    # Format numbers with percentage change (like PCR OI | PCR Δ OI)
+    current_str = f"₹{int(current_pnl):,} | {current_pct:+.2f}%"
+    ce_str = f"₹{int(ce_extreme_loss):,} | {ce_pct:+.2f}%"
+    pe_str = f"₹{int(pe_extreme_loss):,} | {pe_pct:+.2f}%"
 
     html = (f"<div style='display:flex; gap:12px; margin-top:4px; font-size:11px;'>"
             f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {current_color}; padding:6px 8px; border-radius:3px;'>"
             f"<div style='color:#888; font-size:9px;'>CENTER (Spot)</div>"
-            f"<div style='color:{current_color}; font-weight:bold; font-size:12px;'>{current_str}</div>"
+            f"<div style='color:{current_color}; font-weight:bold; font-size:11px;'>{current_str}</div>"
             f"</div>"
             f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {ce_color}; padding:6px 8px; border-radius:3px;'>"
             f"<div style='color:#888; font-size:9px;'>CE EXTREME (ATM+1400)</div>"
-            f"<div style='color:{ce_color}; font-weight:bold; font-size:12px;'>{ce_str}</div>"
+            f"<div style='color:{ce_color}; font-weight:bold; font-size:11px;'>{ce_str}</div>"
             f"</div>"
             f"<div style='flex:1; background:#1a1a1a; border-left:3px solid {pe_color}; padding:6px 8px; border-radius:3px;'>"
             f"<div style='color:#888; font-size:9px;'>PE EXTREME (ATM-1400)</div>"
-            f"<div style='color:{pe_color}; font-weight:bold; font-size:12px;'>{pe_str}</div>"
+            f"<div style='color:{pe_color}; font-weight:bold; font-size:11px;'>{pe_str}</div>"
             f"</div>"
             f"</div>")
 
