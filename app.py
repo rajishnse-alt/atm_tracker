@@ -1999,6 +1999,81 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
 
     return html
 
+def oi_change_table(result, symbol, expiry):
+    """
+    Render OI and OI CHANGE combined table.
+    Shows strikes with both base OI and OI change values.
+    Top 5 strikes by OI change magnitude for each side.
+    """
+    if not result:
+        return ""
+
+    ce_oi = result.get("ce_oi", {})
+    pe_oi = result.get("pe_oi", {})
+    ce_oi_chg = result.get("ce_oi_chg", {})
+    pe_oi_chg = result.get("pe_oi_chg", {})
+
+    if not ce_oi_chg and not pe_oi_chg:
+        return ""
+
+    # Get top 5 strikes by OI change for each side
+    ce_top = sorted([(s, v) for s, v in ce_oi_chg.items()], key=lambda x: abs(x[1]), reverse=True)[:5]
+    pe_top = sorted([(s, v) for s, v in pe_oi_chg.items()], key=lambda x: abs(x[1]), reverse=True)[:5]
+
+    html = f"""
+    <div style='margin-top:12px;'>
+        <div class='sec-hdr' style='font-size:12px; margin-bottom:8px;'>📊 OI & OI CHANGE TABLE — {symbol} {expiry}</div>
+        <table class='opt-table' style='font-size:10px;'>
+            <thead>
+                <tr style='background:#1a1a1a; border-bottom:1px solid #333;'>
+                    <th style='padding:4px;text-align:center;width:40px;'>Type</th>
+                    <th style='padding:4px;text-align:center;width:70px;'>Strike</th>
+                    <th style='padding:4px;text-align:right;width:80px;'>OI</th>
+                    <th style='padding:4px;text-align:right;width:80px;'>OI Change</th>
+                    <th style='padding:4px;text-align:right;width:60px;'>%Δ</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+
+    # CE rows
+    for strike, change in ce_top:
+        oi_val = ce_oi.get(strike, 0)
+        change_color = "#00e676" if change > 0 else "#FF6B6B" if change < 0 else "#999"
+        pct_change = (change / oi_val * 100) if oi_val > 0 else 0
+        html += f"""
+                <tr style='border-bottom:1px solid #222;'>
+                    <td style='padding:4px;text-align:center;'><span style='background:#0a4a2e;color:#00e676;padding:2px 6px;border-radius:3px;font-size:9px;'>CE</span></td>
+                    <td style='padding:4px;text-align:center;font-weight:600;'>{strike}</td>
+                    <td style='padding:4px;text-align:right;color:#999;'>{oi_val:,.0f}</td>
+                    <td style='padding:4px;text-align:right;color:{change_color};font-weight:600;'>{change:+,.0f}</td>
+                    <td style='padding:4px;text-align:right;color:{change_color};'>{pct_change:+.1f}%</td>
+                </tr>
+        """
+
+    # PE rows
+    for strike, change in pe_top:
+        oi_val = pe_oi.get(strike, 0)
+        change_color = "#FF6B6B" if change > 0 else "#00e676" if change < 0 else "#999"
+        pct_change = (change / oi_val * 100) if oi_val > 0 else 0
+        html += f"""
+                <tr style='border-bottom:1px solid #222;'>
+                    <td style='padding:4px;text-align:center;'><span style='background:#4a0a2e;color:#FF6B6B;padding:2px 6px;border-radius:3px;font-size:9px;'>PE</span></td>
+                    <td style='padding:4px;text-align:center;font-weight:600;'>{strike}</td>
+                    <td style='padding:4px;text-align:right;color:#999;'>{oi_val:,.0f}</td>
+                    <td style='padding:4px;text-align:right;color:{change_color};font-weight:600;'>{change:+,.0f}</td>
+                    <td style='padding:4px;text-align:right;color:{change_color};'>{pct_change:+.1f}%</td>
+                </tr>
+        """
+
+    html += """
+            </tbody>
+        </table>
+    </div>
+    """
+
+    return html
+
 def _trend_row_class(signal):
     s = signal.upper()
     if any(x in s for x in ["⬆", "BULL", "PUT WRITER", "GAMMA↑", "PRE-GAMMA ↑", "SMART BULL", "EXP VOL"]):
@@ -2284,6 +2359,12 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"</div>", unsafe_allow_html=True)
 
     render_table(result, sym, selected, analysis)
+
+    # Show separate OI Change table
+    oi_chg_html = oi_change_table(result, sym, selected)
+    if oi_chg_html:
+        st.markdown(oi_chg_html, unsafe_allow_html=True)
+
     if analysis:
         render_rrs_table(analysis, sym, selected)
 
