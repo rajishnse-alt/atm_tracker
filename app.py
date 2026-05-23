@@ -552,6 +552,8 @@ def parse(data, symbol):
     return dict(
         spot=spot, atm=atm, step=step,
         ce_map=ce_map, pe_map=pe_map,
+        ce_oi=ce_oi, pe_oi=pe_oi,
+        ce_oi_chg=ce_oi_chg, pe_oi_chg=pe_oi_chg,
         ce_rows=ce_rows, pe_rows=pe_rows,
         ce_sum=ce_sum, pe_sum=pe_sum,
         ce_sqrt=ce_sqrt, pe_sqrt=pe_sqrt,
