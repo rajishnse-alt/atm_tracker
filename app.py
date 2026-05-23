@@ -470,7 +470,9 @@ def _get_oi_chg(md):
         v = md.get(key)
         if v is not None:
             try:
-                return float(v)
+                val = float(v)
+                if val != 0.0:  # Only return if non-zero
+                    return val
             except Exception:
                 pass
     return 0.0
@@ -481,6 +483,12 @@ def parse(data, symbol):
     ce_oi_chg = {}; pe_oi_chg = {}
     spot = None
 
+    # Load cached OI change values (for when market is closed)
+    cache_key_ce = f"cached_ce_oi_chg_{symbol}"
+    cache_key_pe = f"cached_pe_oi_chg_{symbol}"
+    cached_ce_oi_chg = st.session_state.get(cache_key_ce, {})
+    cached_pe_oi_chg = st.session_state.get(cache_key_pe, {})
+
     for row in data:
         strike = float(row.get("strike_price", 0))
         if spot is None:
@@ -490,12 +498,16 @@ def parse(data, symbol):
         call_md = (row.get("call_options") or {}).get("market_data") or {}
         ce_map[strike]    = float(call_md.get("ltp") or 0)
         ce_oi[strike]     = float(call_md.get("oi")  or 0)
-        ce_oi_chg[strike] = _get_oi_chg(call_md)
+        ce_oi_chg[strike] = _get_oi_chg(call_md) or cached_ce_oi_chg.get(strike, 0.0)
 
         put_md  = (row.get("put_options") or {}).get("market_data") or {}
         pe_map[strike]    = float(put_md.get("ltp") or 0)
         pe_oi[strike]     = float(put_md.get("oi")  or 0)
-        pe_oi_chg[strike] = _get_oi_chg(put_md)
+        pe_oi_chg[strike] = _get_oi_chg(put_md) or cached_pe_oi_chg.get(strike, 0.0)
+
+    # Cache the OI change values for next refresh (when market is closed)
+    st.session_state[cache_key_ce] = ce_oi_chg
+    st.session_state[cache_key_pe] = pe_oi_chg
 
     if spot is None:
         common = set(ce_map) & set(pe_map)
