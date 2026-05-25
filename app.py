@@ -994,9 +994,9 @@ def _na(v, fmt="{:.2f}", fallback="N/A"):
         return fallback
     return fmt.format(v)
 
-def _pcr_badge(val, label, show_range_note=False):
+def _pcr_badge(val, label, show_range_note=False, history=None):
     """
-    Render a single PCR badge.
+    Render a single PCR badge with trend history.
     Thresholds: > 1.0 = BULLISH, < 1.0 = BEARISH, == 1.0 = NEUTRAL
     """
     if val > 1.0:
@@ -1009,10 +1009,24 @@ def _pcr_badge(val, label, show_range_note=False):
     note = ("<span class='pcr-label' style='margin-left:4px;font-size:9px;'>"
             "CE:ATM→+10 | PE:ATM→-10</span>") if show_range_note else ""
 
+    # Add trend history tooltip if available
+    trend_html = ""
+    if history and len(history) > 0:
+        trend_text = " → ".join(str(v) for v in history)
+        # Determine trend direction (↑ if rising, ↓ if falling)
+        trend_arrow = "↑" if history[-1] > history[0] else "↓" if history[-1] < history[0] else "→"
+        trend_color = "#00e676" if history[-1] > history[0] else "#ff5252" if history[-1] < history[0] else "#999"
+
+        trend_html = (f"<span class='pcr-trend' style='margin-left:6px;font-size:9px;color:{trend_color};' "
+                     f"title='Last 6 PCR values: {trend_text}'>"
+                     f"{trend_arrow} {trend_text}"
+                     f"</span>")
+
     return (f"<div class='pcr-wrap'>"
             f"<span class='pcr-label'>{label}</span>"
             f"<span class='pcr-val {cls}'>{val:.2f}</span>"
             f"<span class='pcr-tag {tag}'>{text}</span>"
+            f"{trend_html}"
             f"{note}"
             f"</div>")
 
@@ -1911,10 +1925,30 @@ def parse_entry_prices(text_input):
 
     return ce_data, pe_data
 
+def _update_pcr_history(symbol, pcr_value):
+    """Track last 6 PCR values for trend analysis."""
+    history_key = f"pcr_history_{symbol}"
+    history = st.session_state.get(history_key, [])
+
+    # Add new PCR value
+    history.append(round(pcr_value, 2))
+
+    # Keep only last 6 values
+    if len(history) > 6:
+        history = history[-6:]
+
+    st.session_state[history_key] = history
+    return history
+
+def _get_pcr_history(symbol):
+    """Retrieve PCR history for trend display."""
+    history_key = f"pcr_history_{symbol}"
+    return st.session_state.get(history_key, [])
+
 def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_val=None, atm=None, step=None, bullish=None, ce_map=None, pe_map=None, opening_ce_prices=None, opening_pe_prices=None, symbol='NIFTY', days_to_expiry=1):
     """
     Render PCR badges with OI change information, SPCL VAL, and trade setup.
-    - PCR OI   : based on total open interest (standard)
+    - PCR OI   : based on total open interest (standard) with last 6 values trend
     - PCR Δ OI : based on intraday OI additions (fresh writing sentiment)
     - SPCL VAL : Special value indicator (sqrt(CE_LTP + PE_LTP) * π/2, adjusted for VIX)
                Color: Green if bullish (Bu), Dark Orange if bearish (Be)
@@ -1922,7 +1956,10 @@ def pcr_html(pcr, pcr_oi_chg=None, atm_ce_oi_chg=None, atm_pe_oi_chg=None, spcl_
     - Valid Strikes: Shows strikes from complete option chain within (SPCL VAL - 5) to SPCL VAL range
     - OI Change: Shows ATM Calls/Puts SHORT/LONG status based on OI direction
     """
-    badges = _pcr_badge(pcr, "PCR OI", show_range_note=True)
+    # Track and get PCR history for trend analysis
+    pcr_history = _update_pcr_history(symbol, pcr)
+
+    badges = _pcr_badge(pcr, "PCR OI", show_range_note=True, history=pcr_history)
 
     if pcr_oi_chg is not None and pcr_oi_chg > 0:
         badges += "<span class='pcr-divider'>│</span>"
