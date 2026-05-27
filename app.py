@@ -1939,7 +1939,7 @@ def _calculate_26_11_levels(spot, symbol):
 
     if is_market_open:
         # ─────────────────────────────────────────────────────────────────────
-        # MARKET IS LIVE: Use TODAY's intraday high/low (updated every 3 mins)
+        # MARKET LIVE: fetch intraday high/low every 3 minutes
         # ─────────────────────────────────────────────────────────────────────
         should_fetch = False
 
@@ -1961,8 +1961,7 @@ def _calculate_26_11_levels(spot, symbol):
         if should_fetch:
             try:
                 instrument_key = INSTRUMENT_KEY.get(symbol)
-                # ✅ FIX: use "access_token" not "upstox_token"
-                token = st.session_state.get("access_token")
+                token = st.session_state.get("access_token")   # ← FIXED token key
 
                 if not instrument_key or not token:
                     raise ValueError("Missing instrument key or token")
@@ -1977,22 +1976,25 @@ def _calculate_26_11_levels(spot, symbol):
                 response = requests.get(url, params=params, headers=headers, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
-                    # Store raw response for debug
-                    st.session_state[f"api_response_{symbol}"] = {
-                        "status": "SUCCESS",
-                        "data": data,
-                        "timestamp": str(now_ist)
-                    }
-
                     if data.get("status") == "success" and data.get("data"):
                         quote = data["data"].get(instrument_key, {})
                         ohlc = quote.get("ohlc", {})
                         high = float(ohlc.get("high", spot))
                         low  = float(ohlc.get("low", spot))
 
-                        # Sanity check
                         if high < low:
                             high, low = low, high
+
+                        # ── Store for display in debug panel ──
+                        st.session_state[f"api_response_{symbol}"] = {
+                            "symbol": symbol,
+                            "ohlc_keys": list(ohlc.keys()),
+                            "ohlc_data": ohlc,
+                            "extracted_high": high,
+                            "extracted_low": low,
+                            "timestamp": str(now_ist),
+                            "status": "SUCCESS"
+                        }
 
                         st.session_state[tracking_key] = {
                             "high": high,
@@ -2001,12 +2003,11 @@ def _calculate_26_11_levels(spot, symbol):
                             "last_update": now_ist
                         }
                     else:
-                        raise ValueError("No data in response")
+                        raise ValueError(f"API success=False or no data: {data}")
                 else:
-                    raise ValueError(f"API error {response.status_code}")
-
+                    raise ValueError(f"HTTP {response.status_code}")
             except Exception as e:
-                # Fallback: keep existing values or use spot
+                # Fallback: keep previous or use spot
                 if tracking_key not in st.session_state:
                     st.session_state[tracking_key] = {
                         "high": spot,
@@ -2014,6 +2015,13 @@ def _calculate_26_11_levels(spot, symbol):
                         "date": now_ist.date(),
                         "last_update": now_ist
                     }
+                # Store error in debug
+                st.session_state[f"api_response_{symbol}"] = {
+                    "symbol": symbol,
+                    "status": "ERROR",
+                    "error": str(e),
+                    "timestamp": str(now_ist)
+                }
 
         tracking = st.session_state[tracking_key]
         high = tracking.get("high", spot)
@@ -2021,7 +2029,7 @@ def _calculate_26_11_levels(spot, symbol):
 
     else:
         # ─────────────────────────────────────────────────────────────────────
-        # MARKET IS CLOSED: Use YESTERDAY's high/low
+        # MARKET CLOSED: use yesterday's high/low from historical candles
         # ─────────────────────────────────────────────────────────────────────
         if yesterday_key not in st.session_state:
             try:
@@ -2030,7 +2038,7 @@ def _calculate_26_11_levels(spot, symbol):
                 day_before_str = (yesterday - timedelta(days=1)).strftime("%Y-%m-%d")
 
                 instrument_key = INSTRUMENT_KEY.get(symbol)
-                token = st.session_state.get("access_token")   # ✅ FIX
+                token = st.session_state.get("access_token")   # ← FIXED
 
                 if instrument_key and token:
                     url = f"https://api.upstox.com/v3/historical-candle/{instrument_key}/days/1/{yesterday_str}/{day_before_str}"
@@ -2059,10 +2067,16 @@ def _calculate_26_11_levels(spot, symbol):
                         raise ValueError(f"HTTP {response.status_code}")
                 else:
                     raise ValueError("Missing key or token")
-            except Exception:
+            except Exception as e:
                 high = spot
                 low = spot
                 st.session_state[yesterday_key] = {"high": high, "low": low}
+                st.session_state[f"api_response_{symbol}"] = {
+                    "symbol": symbol,
+                    "status": "ERROR (yesterday)",
+                    "error": str(e),
+                    "timestamp": str(now_ist)
+                }
         else:
             hl = st.session_state[yesterday_key]
             high = hl["high"]
