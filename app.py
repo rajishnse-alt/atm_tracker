@@ -1954,71 +1954,208 @@ def _update_session_high_low(symbol, ltp):
 def _start_upstox_websocket(symbol, access_token):
     """
     Start Upstox WebSocket connection in background thread.
-    Subscribes to live ticks and updates session high/low.
+    Subscribes to live ticks using Upstox V3 API and updates session high/low.
+
+    WebSocket Flow:
+    1. Call authorize endpoint to get WebSocket URL
+    2. Connect to WebSocket URL
+    3. Send subscription payload with instrument key
+    4. Process tick messages and update high/low
     """
-    if not access_token:
+    if not access_token or symbol not in INSTRUMENT_KEY:
+        logging.warning(f"Cannot start WebSocket: token={bool(access_token)}, symbol_valid={symbol in INSTRUMENT_KEY}")
         return
 
+    instrument_key = INSTRUMENT_KEY[symbol]
+    ws_connection = {"active": False}
+
     def on_message(ws, message):
+        """Process incoming tick data from Upstox WebSocket."""
         try:
             data = json.loads(message)
-            # Handle different message types from Upstox
-            if 'ltp' in data:  # Last Traded Price
-                ltp = float(data['ltp'])
-                _update_session_high_low(symbol, ltp)
-            elif 'lastPrice' in data:  # Alternative field name
-                ltp = float(data['lastPrice'])
-                _update_session_high_low(symbol, ltp)
+
+            # Upstox sends tick data with 'ltp' field
+            if isinstance(data, dict):
+                ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
+
+                if ltp is not None:
+                    try:
+                        ltp = float(ltp)
+                        _update_session_high_low(symbol, ltp)
+                        logging.debug(f"[{symbol}] Tick: {ltp} | H: {st.session_state.get(f'session_high_low_{symbol}', {}).get('high')} | L: {st.session_state.get(f'session_high_low_{symbol}', {}).get('low')}")
+                    except (ValueError, TypeError) as e:
+                        logging.warning(f"LTP parse error for {symbol}: {e}")
+                else:
+                    logging.debug(f"[{symbol}] Non-price message: {list(data.keys())}")
+
+        except json.JSONDecodeError as e:
+            logging.warning(f"JSON decode error for {symbol}: {e}")
         except Exception as e:
-            logging.warning(f"WebSocket message error: {e}")
+            logging.error(f"WebSocket message error for {symbol}: {e}")
 
     def on_error(ws, error):
-        logging.warning(f"WebSocket error for {symbol}: {error}")
+        logging.error(f"WebSocket error for {symbol}: {error}")
+        ws_connection["active"] = False
 
     def on_close(ws, close_status_code, close_msg):
-        logging.info(f"WebSocket closed for {symbol}")
+        logging.info(f"WebSocket closed for {symbol} | Code: {close_status_code} | Msg: {close_msg}")
+        ws_connection["active"] = False
 
     def on_open(ws):
+        """Subscribe to instrument after WebSocket connects."""
         try:
-            # Subscription payload for Upstox V3
+            # Upstox V3 subscription payload (mode: "full" for all tick data)
             payload = {
-                "guid": f"stream-{symbol}",
+                "guid": f"atm-tracker-{symbol}-{int(time.time())}",
                 "method": "sub",
                 "data": {
-                    "instrument_keys": [f"NSE_EQ|{symbol}"],
-                    "mode": "full"
+                    "instrument_keys": [instrument_key],
+                    "mode": "full"  # Full mode = complete OHLC + LTP
                 }
             }
             ws.send(json.dumps(payload))
-            logging.info(f"Subscribed to {symbol} WebSocket")
+            ws_connection["active"] = True
+            logging.info(f"✅ Subscribed to [{instrument_key}] on WebSocket")
         except Exception as e:
-            logging.warning(f"WebSocket subscription error: {e}")
+            logging.error(f"WebSocket subscription failed for {symbol}: {e}")
 
     try:
-        # Get WebSocket URL from Upstox authorize endpoint
+        # Step 1: Get WebSocket URL from authorize endpoint
         headers = upstox_headers(access_token)
-        response = requests.get(
+        auth_response = requests.get(
             "https://api.upstox.com/v3/feed/market-data-feed/authorize",
             headers=headers,
             timeout=10
         )
 
-        if response.status_code == 200:
-            ws_url = response.json().get('data', {}).get('authorizedRedirectUri')
-            if ws_url:
-                ws = websocket.WebSocketApp(
-                    ws_url,
-                    on_open=on_open,
-                    on_message=on_message,
-                    on_error=on_error,
-                    on_close=on_close
-                )
-                # Run in daemon thread so it doesn't block the app
-                ws_thread = threading.Thread(target=ws.run_forever, daemon=True)
-                ws_thread.start()
-                logging.info(f"WebSocket thread started for {symbol}")
+        if auth_response.status_code != 200:
+            logging.error(f"Authorize endpoint failed for {symbol}: {auth_response.status_code} - {auth_response.text}")
+            return
+
+        response_data = auth_response.json()
+        if response_data.get('status') != 'success':
+            logging.error(f"Authorize failed for {symbol}: {response_data.get('errors')}")
+            return
+
+        ws_url = response_data.get('data', {}).get('authorizedRedirectUri')
+        if not ws_url:
+            logging.error(f"No WebSocket URL in authorize response for {symbol}")
+            return
+
+        logging.info(f"Got WebSocket URL for {symbol}: {ws_url[:50]}...")
+
+        # Step 2: Connect to WebSocket
+        ws = websocket.WebSocketApp(
+            ws_url,
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+            ping_interval=30,  # Send ping every 30 seconds to keep connection alive
+            ping_timeout=10
+        )
+
+        # Step 3: Run in daemon thread
+        ws_thread = threading.Thread(target=ws.run_forever, daemon=True, name=f"ws-{symbol}")
+        ws_thread.daemon = True
+        ws_thread.start()
+        logging.info(f"🔌 WebSocket thread started for {symbol}")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request error getting WebSocket URL for {symbol}: {e}")
     except Exception as e:
-        logging.warning(f"Failed to start WebSocket for {symbol}: {e}")
+        logging.error(f"Failed to start WebSocket for {symbol}: {e}")
+
+def _test_websocket_connection(symbol, access_token):
+    """
+    Test Upstox WebSocket connection for a single symbol.
+    Runs for 10 seconds and returns tick count.
+    Returns: (success: bool, high: float, low: float, ticks: int, error: str)
+    """
+    if not access_token or symbol not in INSTRUMENT_KEY:
+        return False, None, None, 0, "Invalid token or symbol"
+
+    instrument_key = INSTRUMENT_KEY[symbol]
+    test_data = {"high": None, "low": None, "ticks": 0, "error": None, "connected": False}
+
+    def on_message(ws, message):
+        try:
+            data = json.loads(message)
+            ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
+            if ltp:
+                ltp = float(ltp)
+                if test_data["high"] is None or ltp > test_data["high"]:
+                    test_data["high"] = ltp
+                if test_data["low"] is None or ltp < test_data["low"]:
+                    test_data["low"] = ltp
+                test_data["ticks"] += 1
+        except Exception as e:
+            test_data["error"] = str(e)
+
+    def on_error(ws, error):
+        test_data["error"] = str(error)
+
+    def on_open(ws):
+        try:
+            payload = {
+                "guid": f"test-{symbol}-{int(time.time())}",
+                "method": "sub",
+                "data": {
+                    "instrument_keys": [instrument_key],
+                    "mode": "full"
+                }
+            }
+            ws.send(json.dumps(payload))
+            test_data["connected"] = True
+        except Exception as e:
+            test_data["error"] = f"Subscribe error: {e}"
+
+    try:
+        # Get WebSocket URL
+        headers = upstox_headers(access_token)
+        auth_response = requests.get(
+            "https://api.upstox.com/v3/feed/market-data-feed/authorize",
+            headers=headers,
+            timeout=10
+        )
+
+        if auth_response.status_code != 200:
+            return False, None, None, 0, f"Authorize failed: {auth_response.status_code}"
+
+        ws_url = auth_response.json().get('data', {}).get('authorizedRedirectUri')
+        if not ws_url:
+            return False, None, None, 0, "No WebSocket URL returned"
+
+        # Connect to WebSocket
+        ws = websocket.WebSocketApp(
+            ws_url,
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error
+        )
+
+        # Run for 10 seconds in thread
+        def run_ws():
+            ws.run_forever()
+
+        ws_thread = threading.Thread(target=run_ws, daemon=True)
+        ws_thread.start()
+
+        # Wait 10 seconds for ticks
+        time.sleep(10)
+        ws.close()
+        time.sleep(1)
+
+        if not test_data["connected"]:
+            return False, None, None, 0, "Failed to subscribe"
+
+        if test_data["ticks"] == 0:
+            return False, None, None, 0, "No ticks received (market may be closed)"
+
+        return True, test_data["high"], test_data["low"], test_data["ticks"], None
+
+    except Exception as e:
+        return False, None, None, 0, str(e)
 
 def _fetch_upstox_data(symbol, access_token):
     """Fetch intraday high/low from Upstox WebSocket."""
@@ -2609,12 +2746,43 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
                 st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
             else:
-                st.warning("❌ No NSE data - using spot price as fallback")
+                st.warning("⏳ Waiting for WebSocket data from Upstox...")
                 st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                 st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
 
-                all_keys = [k for k in st.session_state.keys() if "nse" in k.lower() or "debug" in k.lower()]
-                st.write(f"Session keys: {all_keys}")
+                # Show WebSocket status
+                st.markdown("### 📡 WebSocket Diagnostic")
+
+                ws_state_key = f"session_high_low_{sym}"
+                ws_started_key = f"ws_started_{sym}"
+                ws_data = st.session_state.get(ws_state_key)
+                ws_started = st.session_state.get(ws_started_key, False)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if ws_started:
+                        st.write("✅ **WebSocket Initialized**")
+                    else:
+                        st.write("🔄 **WebSocket Initializing...**")
+
+                with col2:
+                    st.write(f"**Instrument Key:**")
+                    st.code(INSTRUMENT_KEY.get(sym, "NOT FOUND"))
+
+                if ws_data:
+                    st.success(f"✅ **Receiving Ticks**")
+                    col_high, col_low, col_ticks = st.columns(3)
+                    with col_high:
+                        st.metric("Session High", ws_data.get('high', 'N/A'))
+                    with col_low:
+                        st.metric("Session Low", ws_data.get('low', 'N/A'))
+                    with col_ticks:
+                        st.metric("Ticks Count", ws_data.get('ticks', 0))
+                else:
+                    st.info(f"⏳ **Waiting for first tick...**")
+                    st.write("WebSocket is connecting to Upstox and subscribing to live feed.")
+                    st.write("This can take 5-10 seconds on first load.")
 
     st.markdown(
         f"<div class='inst-card'>"
@@ -3080,8 +3248,58 @@ with st.sidebar:
         **Data Source:** Upstox WebSocket (Live Ticks)
         **Update Frequency:** Tick-by-tick (instantaneous)
         """)
-        if st.button("📖 Upstox API Docs"):
-            st.markdown("[Upstox V3 API Docs](https://upstox.com/open-api/)")
+
+        # WebSocket Test Button
+        st.markdown("**Test WebSocket Connection:**")
+        test_col1, test_col2 = st.columns(2)
+
+        with test_col1:
+            if st.button("🧪 Test Now", key="ws_test_btn"):
+                st.session_state["ws_test_running"] = True
+
+        with test_col2:
+            if st.button("📖 API Docs"):
+                st.markdown("[Upstox V3 API](https://upstox.com/open-api/)")
+
+        # Run test if button clicked
+        if st.session_state.get("ws_test_running", False):
+            st.info("🔄 Testing WebSocket connections... (10 seconds per symbol)")
+
+            test_results = {}
+            progress_bar = st.progress(0)
+
+            for idx, (symbol, _) in enumerate(INSTRUMENT_KEY.items()):
+                with st.spinner(f"Testing {symbol}..."):
+                    success, high, low, ticks, error = _test_websocket_connection(symbol, access_token)
+                    test_results[symbol] = {
+                        "success": success,
+                        "high": high,
+                        "low": low,
+                        "ticks": ticks,
+                        "error": error
+                    }
+
+                progress_bar.progress((idx + 1) / len(INSTRUMENT_KEY))
+
+            st.session_state["ws_test_running"] = False
+
+            # Show results
+            st.markdown("### 📊 Test Results")
+            for symbol, result in test_results.items():
+                if result["success"]:
+                    st.success(f"""
+                    ✅ **{symbol}** - Connected!
+                    - High: {result['high']:.2f}
+                    - Low: {result['low']:.2f}
+                    - Ticks: {result['ticks']}
+                    """)
+                else:
+                    st.error(f"""
+                    ❌ **{symbol}** - Failed
+                    - Error: {result['error']}
+                    """)
+
+            st.info("✨ If all tests passed, WebSocket is working correctly!")
 
 
 # Show appropriate page
