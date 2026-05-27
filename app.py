@@ -1938,33 +1938,97 @@ def _calculate_26_11_levels(spot, symbol):
     yesterday_key = f"yesterday_26_11_{symbol}"
 
     if is_market_open:
-        # Market is open - track intraday high/low
-        if tracking_key not in st.session_state:
-            st.session_state[tracking_key] = {"high": spot, "low": spot, "date": now_ist.date()}
+        # Market is open - fetch intraday high/low from API
+        if tracking_key not in st.session_state or st.session_state[tracking_key].get("date") != now_ist.date():
+            # Fetch fresh intraday data
+            try:
+                instrument_key = INSTRUMENT_KEY.get(symbol)
+                token = st.session_state.get("upstox_token")
+
+                if instrument_key and token:
+                    url = f"https://api.upstox.com/v3/historical-candle/intraday/{instrument_key}/days/1"
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Authorization': f'Bearer {token}'
+                    }
+                    response = requests.get(url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("status") == "success" and data.get("data"):
+                            candles = data["data"].get("candles", [])
+                            if candles:
+                                # Calculate high/low from all intraday candles
+                                highs = [float(candle[2]) for candle in candles if len(candle) > 2]
+                                lows = [float(candle[3]) for candle in candles if len(candle) > 3]
+                                high = max(highs) if highs else spot
+                                low = min(lows) if lows else spot
+                                st.session_state[tracking_key] = {"high": high, "low": low, "date": now_ist.date()}
+                            else:
+                                raise ValueError("No intraday candles")
+                        else:
+                            raise ValueError("API response error")
+                    else:
+                        raise ValueError(f"API error {response.status_code}")
+                else:
+                    raise ValueError("Missing instrument key or token")
+            except Exception as e:
+                # Fallback: use previous tracking or spot
+                if tracking_key in st.session_state:
+                    pass  # Keep previous value
+                else:
+                    st.session_state[tracking_key] = {"high": spot, "low": spot, "date": now_ist.date()}
 
         tracking = st.session_state[tracking_key]
-
-        # Reset if it's a new day
-        if tracking["date"] != now_ist.date():
-            tracking = {"high": spot, "low": spot, "date": now_ist.date()}
-            st.session_state[tracking_key] = tracking
-
-        # Update high/low
-        tracking["high"] = max(tracking["high"], spot)
-        tracking["low"] = min(tracking["low"], spot)
-        st.session_state[tracking_key] = tracking
-
         high = tracking["high"]
         low = tracking["low"]
     else:
-        # Market is closed - use yesterday's high/low
-        # For now, use current spot as both high and low (user should set yesterday's data)
-        if yesterday_key in st.session_state:
-            high, low = st.session_state[yesterday_key]
+        # Market is closed - fetch yesterday's high/low from Upstox API
+        if yesterday_key not in st.session_state:
+            # Fetch from API
+            try:
+                yesterday = datetime.now(IST) - timedelta(days=1)
+                yesterday_str = yesterday.strftime("%Y-%m-%d")
+                day_before_str = (yesterday - timedelta(days=1)).strftime("%Y-%m-%d")
+
+                instrument_key = INSTRUMENT_KEY.get(symbol)
+                token = st.session_state.get("upstox_token")
+
+                if instrument_key and token:
+                    url = f"https://api.upstox.com/v3/historical-candle/{instrument_key}/days/1/{yesterday_str}/{day_before_str}"
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Authorization': f'Bearer {token}'
+                    }
+                    response = requests.get(url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("status") == "success" and data.get("data"):
+                            candles = data["data"].get("candles", [])
+                            if candles:
+                                candle = candles[0]
+                                high = float(candle[2]) if len(candle) > 2 else spot
+                                low = float(candle[3]) if len(candle) > 3 else spot
+                                st.session_state[yesterday_key] = {"high": high, "low": low}
+                                high, low = high, low
+                            else:
+                                raise ValueError("No candles data")
+                        else:
+                            raise ValueError("API response error")
+                    else:
+                        raise ValueError(f"API error {response.status_code}")
+                else:
+                    raise ValueError("Missing instrument key or token")
+            except Exception as e:
+                # Fallback: use current spot
+                high = spot
+                low = spot
+                st.session_state[yesterday_key] = {"high": high, "low": low}
         else:
-            # Fallback: use current spot
-            high = spot
-            low = spot
+            hl = st.session_state[yesterday_key]
+            high = hl["high"]
+            low = hl["low"]
 
     # Calculate 26.11% levels
     range_val = high - low
