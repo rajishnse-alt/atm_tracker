@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
-from nse import NSE
+from nsefast.collectors import equity
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -1940,18 +1940,13 @@ def _calculate_26_11_levels(spot, symbol):
     low = spot
 
     try:
-        # Use NSE library to get intraday high/low
-        nse = NSE()
-        quote = nse.get_quote(symbol)
+        # Use nsefast library to get intraday high/low
+        df = equity.live_quotes(symbol=symbol)
 
-        if quote and "priceInfo" in quote:
-            price_info = quote["priceInfo"]
-
-            # Get intraday high/low
-            if "intraDayHighLow" in price_info:
-                intra = price_info["intraDayHighLow"]
-                high = float(intra.get("max", spot))
-                low = float(intra.get("min", spot))
+        if df is not None and len(df) > 0:
+            # Extract high and low from the first row
+            high = float(df["high"].iloc[0])
+            low = float(df["low"].iloc[0])
 
             # Store debug info
             st.session_state["api_response_NSE"] = {
@@ -1960,7 +1955,7 @@ def _calculate_26_11_levels(spot, symbol):
                 "high": high,
                 "low": low,
                 "timestamp": str(datetime.now(IST)),
-                "source": "NSE Library"
+                "source": "nsefast Library"
             }
 
             # Validate and swap if high < low
