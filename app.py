@@ -1977,15 +1977,26 @@ def _calculate_26_11_levels(spot, symbol):
                         if data.get("status") == "success" and data.get("data"):
                             candles = data["data"].get("candles", [])
                             if candles:
-                                # Calculate high/low from all intraday candles
-                                highs = [float(candle[2]) for candle in candles if len(candle) > 2]
-                                lows = [float(candle[3]) for candle in candles if len(candle) > 3]
+                                # Upstox format: [timestamp, open, high, low, close, volume]
+                                # Extract HIGH (index 2) and LOW (index 3) from each candle
+                                highs = []
+                                lows = []
+                                for candle in candles:
+                                    if len(candle) >= 4:
+                                        # candle[2] = high, candle[3] = low
+                                        h = float(candle[2])
+                                        l = float(candle[3])
+                                        # Validate: high should be >= low
+                                        if h >= l:
+                                            highs.append(h)
+                                            lows.append(l)
+                                        else:
+                                            # Swap if reversed
+                                            highs.append(l)
+                                            lows.append(h)
+
                                 high = max(highs) if highs else spot
                                 low = min(lows) if lows else spot
-
-                                # Ensure high >= low (swap if needed)
-                                if high < low:
-                                    high, low = low, high
                                 st.session_state[tracking_key] = {
                                     "high": high,
                                     "low": low,
@@ -2039,10 +2050,11 @@ def _calculate_26_11_levels(spot, symbol):
                             candles = data["data"].get("candles", [])
                             if candles:
                                 candle = candles[0]
+                                # Upstox format: [timestamp, open, high, low, close, volume]
                                 high = float(candle[2]) if len(candle) > 2 else spot
                                 low = float(candle[3]) if len(candle) > 3 else spot
 
-                                # Ensure high >= low (swap if needed)
+                                # Validate and swap if high < low
                                 if high < low:
                                     high, low = low, high
 
