@@ -1925,6 +1925,60 @@ def parse_entry_prices(text_input):
 
     return ce_data, pe_data
 
+def _calculate_26_11_levels(spot, symbol):
+    """
+    Calculate 26.11% reversal levels based on intraday high/low.
+    If market is closed, use yesterday's high/low.
+    If market is open, track and update with new highs/lows.
+    """
+    now_ist = datetime.now(IST)
+    is_market_open = now_ist.weekday() < 4 and 9 <= now_ist.hour < 16  # Mon-Thu, 9am-4pm
+
+    tracking_key = f"tracking_26_11_{symbol}"
+    yesterday_key = f"yesterday_26_11_{symbol}"
+
+    if is_market_open:
+        # Market is open - track intraday high/low
+        if tracking_key not in st.session_state:
+            st.session_state[tracking_key] = {"high": spot, "low": spot, "date": now_ist.date()}
+
+        tracking = st.session_state[tracking_key]
+
+        # Reset if it's a new day
+        if tracking["date"] != now_ist.date():
+            tracking = {"high": spot, "low": spot, "date": now_ist.date()}
+            st.session_state[tracking_key] = tracking
+
+        # Update high/low
+        tracking["high"] = max(tracking["high"], spot)
+        tracking["low"] = min(tracking["low"], spot)
+        st.session_state[tracking_key] = tracking
+
+        high = tracking["high"]
+        low = tracking["low"]
+    else:
+        # Market is closed - use yesterday's high/low
+        # For now, use current spot as both high and low (user should set yesterday's data)
+        if yesterday_key in st.session_state:
+            high, low = st.session_state[yesterday_key]
+        else:
+            # Fallback: use current spot
+            high = spot
+            low = spot
+
+    # Calculate 26.11% levels
+    range_val = high - low
+    level_26_11_lower = low + (range_val * 0.2611)
+    level_26_11_upper = high - (range_val * 0.2611)
+
+    return {
+        "lower": round(level_26_11_lower, 2),
+        "upper": round(level_26_11_upper, 2),
+        "high": round(high, 2),
+        "low": round(low, 2),
+        "is_market_open": is_market_open
+    }
+
 def _update_pcr_history(symbol, pcr_value):
     """Track last 6 PCR values for trend analysis."""
     history_key = f"pcr_history_{symbol}"
@@ -2391,6 +2445,9 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # Calculate days to expiry for Black-Scholes pricing
     days_to_expiry = calculate_days_to_expiry(selected, now_ist)
 
+    # Calculate 26.11 reversal levels
+    levels_26_11 = _calculate_26_11_levels(result['spot'], sym)
+
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -2399,6 +2456,10 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"  <div style='text-align:right;'>"
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
+        f"    <div style='font-family:var(--mono);font-size:9px;color:#ffc940;margin-top:4px;'>"
+        f"      26.11 Levels: <span style='color:#00e676;'>↑{levels_26_11['upper']}</span> / <span style='color:#ff5252;'>↓{levels_26_11['lower']}</span>"
+        f"      <br/><span style='color:#999;font-size:8px;'>H:{levels_26_11['high']} L:{levels_26_11['low']}</span>"
+        f"    </div>"
         f"  </div></div>"
         f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, days_to_expiry)}"
         f"</div>", unsafe_allow_html=True)
