@@ -1994,12 +1994,14 @@ def _calculate_26_11_levels(spot, symbol):
                                 low = float(live_ohlc.get("low", spot))    # ← Day's LOW
 
                                 # Store for debug display
-                                st.session_state[f"api_response_{symbol}"] = {
+                                debug_info = {
                                     "live_ohlc_keys": list(live_ohlc.keys()),
                                     "live_ohlc_data": live_ohlc,
                                     "extracted_high": high,
-                                    "extracted_low": low
+                                    "extracted_low": low,
+                                    "timestamp": str(datetime.now(IST))
                                 }
+                                st.session_state[f"api_response_{symbol}"] = debug_info
 
                                 # Validate: high should be >= low
                                 if high < low:
@@ -2520,10 +2522,15 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         with st.expander("🔍 **DEBUG LOG** - API Data", expanded=True):
             api_debug = st.session_state.get(f"api_response_{sym}", {})
             if api_debug:
-                st.write("**API Response - live_ohlc:**")
-                st.json(api_debug)
+                st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
+                st.write("**live_ohlc Keys:**", api_debug.get("live_ohlc_keys", []))
+                st.write("**Extracted HIGH:**", api_debug.get("extracted_high", "N/A"))
+                st.write("**Extracted LOW:**", api_debug.get("extracted_low", "N/A"))
+                st.write("**Full Response:**")
+                st.json(api_debug.get("live_ohlc_data", {}))
             else:
-                st.info("⏳ Waiting for API data...")
+                st.warning("❌ No API data stored yet - checking session state...")
+                st.write("Session keys:", [k for k in st.session_state.keys() if "api_response" in k])
 
     with st.spinner(""):
         data, chain_err, used_url = fetch_chain(access_token, sym, selected)
