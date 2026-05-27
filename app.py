@@ -9,7 +9,9 @@ from scipy.optimize import brentq
 import websocket
 import json
 import threading
+import re
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -2158,78 +2160,175 @@ def _test_websocket_connection(symbol, access_token):
     except Exception as e:
         return False, None, None, 0, str(e)
 
-def _fetch_moneycontrol_high_low(symbol):
+def _fetch_indices_high_low():
     """
-    Fetch yesterday's high/low from Moneycontrol.com
-    - Indices: Uses sp_High and sp_Low IDs
-    - Equities: Uses nseHP (NSE High) and nseLP (NSE Low) IDs
+    Scrapes Moneycontrol live markets page for NIFTY 50 and NIFTY BANK
+    high/low using table parsing.
+    Returns: dict with NIFTY and BANKNIFTY keys
     """
     try:
-        # Moneycontrol URLs mapping
-        moneycontrol_urls = {
-            "NIFTY": "https://www.moneycontrol.com/indian-indices/nifty-50-9.html",
-            "BANKNIFTY": "https://www.moneycontrol.com/indian-indices/nifty-bank-9.html",
-            "RELIANCE": "https://www.moneycontrol.com/india/stockpricequote/refineries/relianceindustries/RI",
-            "HDFCBANK": "https://www.moneycontrol.com/india/stockpricequote/banks-private-sector/hdfcbank/HDB",
-            "ICICIBANK": "https://www.moneycontrol.com/india/stockpricequote/banks-private-sector/icicibank/ICI",
-            "SBIN": "https://www.moneycontrol.com/india/stockpricequote/banks-public-sector/statebankofindia/SBI",
-        }
-
-        url = moneycontrol_urls.get(symbol)
-        if not url:
-            logging.warning(f"No Moneycontrol URL for {symbol}")
-            return None
-
-        # Fetch page
+        url = "https://www.moneycontrol.com/markets/indian-indices/live-markets"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        response = requests.get(url, headers=headers, timeout=10)
+
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(response.text, "html.parser")
 
-        # Try to extract based on symbol type
-        high = None
-        low = None
+        # Find indices table
+        table = None
+        for tbl in soup.find_all("table"):
+            if "NIFTY 50" in tbl.get_text():
+                table = tbl
+                break
 
-        # For indices: look for sp_High and sp_Low
-        if symbol in ["NIFTY", "BANKNIFTY"]:
-            high_elem = soup.find(id="sp_High")
-            low_elem = soup.find(id="sp_Low")
+        if not table:
+            table = soup.find("table", class_="mctable1")
 
-            if high_elem and low_elem:
+        if not table:
+            logging.warning("Could not locate indices table on Moneycontrol")
+            return {}
+
+        # Parse rows
+        rows = table.find_all("tr")
+        indices = {}
+
+        for row in rows:
+            cells = row.find_all("td")
+            if not cells or len(cells) < 6:
+                continue
+
+            index_name = cells[0].get_text(strip=True)
+
+            # NIFTY 50
+            if "NIFTY 50" in index_name.upper():
                 try:
-                    high = float(high_elem.get_text(strip=True))
-                    low = float(low_elem.get_text(strip=True))
-                except (ValueError, AttributeError):
+                    high = cells[4].get_text(strip=True).replace(",", "")
+                    low = cells[5].get_text(strip=True).replace(",", "")
+                    indices["NIFTY"] = {"high": float(high), "low": float(low)}
+                except (ValueError, IndexError):
                     pass
 
-        # For equities: look for nseHP and nseLP
-        else:
-            high_elem = soup.find(id="nseHP")  # NSE High
-            low_elem = soup.find(id="nseLP")   # NSE Low
-
-            if high_elem and low_elem:
+            # NIFTY BANK
+            elif "NIFTY BANK" in index_name.upper():
                 try:
-                    high = float(high_elem.get_text(strip=True))
-                    low = float(low_elem.get_text(strip=True))
-                except (ValueError, AttributeError):
+                    high = cells[4].get_text(strip=True).replace(",", "")
+                    low = cells[5].get_text(strip=True).replace(",", "")
+                    indices["BANKNIFTY"] = {"high": float(high), "low": float(low)}
+                except (ValueError, IndexError):
                     pass
+
+        return indices
+
+    except Exception as e:
+        logging.debug(f"Indices scraping failed: {e}")
+        return {}
+
+def _get_equity_url(symbol: str):
+    """Find equity stock URL from Moneycontrol listing page."""
+    try:
+        listing_url = "https://www.moneycontrol.com/india/stockpricequote/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+
+        response = requests.get(listing_url, headers=headers, timeout=15)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        symbol_upper = symbol.upper()
+
+        # Find matching link
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
+            if "/india/stockpricequote/" in href:
+                link_text = link.get_text(strip=True).upper()
+                if link_text == symbol_upper or symbol_upper in link_text or symbol_upper in href.upper():
+                    return urljoin(listing_url, href)
+
+        logging.warning(f"Could not find URL for {symbol}")
+        return None
+
+    except Exception as e:
+        logging.debug(f"Equity URL lookup failed for {symbol}: {e}")
+        return None
+
+def _extract_equity_high_low(html_content: str):
+    """Extract high/low from equity stock page using regex."""
+    try:
+        # Pattern 1: "Day Range 756.90 - 773.90"
+        pattern1 = r"Day\s+Range\s+(\d+\.\d+)\s*[-–]?\s*(\d+\.\d+)"
+        match = re.search(pattern1, html_content, re.IGNORECASE)
+        if match:
+            return float(match.group(2)), float(match.group(1))  # high, low
+
+        # Pattern 2: "High: 773.90 Low: 756.90"
+        pattern2 = r"High\s*[:|]\s*(\d+\.\d+).*?Low\s*[:|]\s*(\d+\.\d+)"
+        match = re.search(pattern2, html_content, re.IGNORECASE | re.DOTALL)
+        if match:
+            return float(match.group(1)), float(match.group(2))  # high, low
+
+        # Pattern 3: Fallback - find Day Range and grab nearby numbers
+        day_range_idx = html_content.lower().find("day range")
+        if day_range_idx != -1:
+            surrounding = html_content[day_range_idx:day_range_idx + 300]
+            numbers = re.findall(r"(\d+\.\d+)", surrounding)
+            if len(numbers) >= 2:
+                return float(numbers[1]), float(numbers[0])  # high, low
+
+        return None, None
+
+    except Exception as e:
+        logging.debug(f"Equity high/low extraction failed: {e}")
+        return None, None
+
+def _fetch_moneycontrol_high_low(symbol):
+    """
+    Fetch high/low from Moneycontrol.com
+    - For indices: Parse live markets table
+    - For equities: Scrape stock page with regex
+    """
+    # Handle indices
+    if symbol in ["NIFTY", "BANKNIFTY"]:
+        indices_data = _fetch_indices_high_low()
+        if symbol in indices_data:
+            data = indices_data[symbol]
+            return {
+                "status": "SUCCESS",
+                "high": data["high"],
+                "low": data["low"],
+                "source": f"Today's High/Low ({symbol}) [Moneycontrol Live]"
+            }
+        return None
+
+    # Handle equities
+    try:
+        stock_url = _get_equity_url(symbol)
+        if not stock_url:
+            return None
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(stock_url, headers=headers, timeout=15)
+        response.raise_for_status()
+
+        high, low = _extract_equity_high_low(response.text)
 
         if high and low:
             return {
                 "status": "SUCCESS",
                 "high": high,
                 "low": low,
-                "source": f"Yesterday's High/Low ({symbol}) [Moneycontrol]"
+                "source": f"Today's High/Low ({symbol}) [Moneycontrol]"
             }
 
-        logging.warning(f"Could not extract high/low for {symbol} from Moneycontrol")
         return None
 
     except Exception as e:
-        logging.debug(f"Moneycontrol fetch failed for {symbol}: {e}")
+        logging.debug(f"Equity scraping failed for {symbol}: {e}")
         return None
 
 def _fetch_yesterdays_high_low(symbol):
