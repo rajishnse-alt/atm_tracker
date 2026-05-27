@@ -1988,19 +1988,18 @@ def _calculate_26_11_levels(spot, symbol):
                             live_ohlc = quote_data.get("live_ohlc", {})
 
                             if live_ohlc:
-                                # DEBUG: Store API response for debugging
-                                debug_key = f"show_debug_{symbol}"
-                                if st.session_state.get(debug_key, False):
-                                    st.write(f"**DEBUG live_ohlc keys:** {list(live_ohlc.keys())}")
-                                    st.write(f"**DEBUG live_ohlc data:** {live_ohlc}")
-
                                 # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
                                 # live_ohlc contains: open, high, low, close, volume, ts
                                 high = float(live_ohlc.get("high", spot))  # ← Day's HIGH
                                 low = float(live_ohlc.get("low", spot))    # ← Day's LOW
 
-                                if st.session_state.get(debug_key, False):
-                                    st.write(f"**DEBUG Extracted:** high={high}, low={low}")
+                                # Store for debug display
+                                st.session_state[f"api_response_{symbol}"] = {
+                                    "live_ohlc_keys": list(live_ohlc.keys()),
+                                    "live_ohlc_data": live_ohlc,
+                                    "extracted_high": high,
+                                    "extracted_low": low
+                                }
 
                                 # Validate: high should be >= low
                                 if high < low:
@@ -2510,10 +2509,21 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         debug_key = f"show_debug_{sym}"
         if debug_key not in st.session_state:
             st.session_state[debug_key] = False
-        if st.button("🔍 Log", key=f"btn_debug_{sym}"):
+        if st.button("🔍 Log", key=f"btn_debug_{sym}", use_container_width=True):
             st.session_state[debug_key] = not st.session_state[debug_key]
 
     st.session_state[expiry_key] = selected
+
+    # DEBUG SECTION - Placeholder for API debug info
+    debug_key = f"show_debug_{sym}"
+    if st.session_state.get(debug_key, False):
+        with st.expander("🔍 **DEBUG LOG** - API Data", expanded=True):
+            api_debug = st.session_state.get(f"api_response_{sym}", {})
+            if api_debug:
+                st.write("**API Response - live_ohlc:**")
+                st.json(api_debug)
+            else:
+                st.info("⏳ Waiting for API data...")
 
     with st.spinner(""):
         data, chain_err, used_url = fetch_chain(access_token, sym, selected)
