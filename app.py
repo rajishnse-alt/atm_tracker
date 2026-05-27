@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
@@ -1925,11 +1925,11 @@ def parse_entry_prices(text_input):
 
     return ce_data, pe_data
 
+# ================== FIXED FUNCTION ==================
 def _calculate_26_11_levels(spot, symbol):
     """
     Calculate 26.11% reversal levels based on intraday high/low.
-    If market is closed, use yesterday's high/low.
-    If market is open, track and update with new highs/lows.
+    Uses Upstox V2 market-quote/quotes for live session OHLC.
     """
     now_ist = datetime.now(IST)
     is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16  # Mon-Fri, 9am-4pm
@@ -1947,11 +1947,9 @@ def _calculate_26_11_levels(spot, symbol):
             should_fetch = True
         else:
             tracking = st.session_state[tracking_key]
-            # Check if date changed
             if tracking.get("date") != now_ist.date():
                 should_fetch = True
             else:
-                # Check if 3 minutes have passed since last update
                 last_update = tracking.get("last_update")
                 if last_update:
                     time_elapsed = (now_ist - last_update).total_seconds() / 60
@@ -1961,87 +1959,48 @@ def _calculate_26_11_levels(spot, symbol):
                     should_fetch = True
 
         if should_fetch:
-            # Fetch real-time intraday OHLC from Market Quote API
             try:
                 instrument_key = INSTRUMENT_KEY.get(symbol)
                 token = st.session_state.get("upstox_token")
 
-                st.session_state["api_fetch_status"] = f"Attempting fetch for {symbol}..."
-
-                if not instrument_key:
-                    st.session_state["api_fetch_status"] = f"❌ No instrument_key for {symbol}"
-                elif not token:
-                    st.session_state["api_fetch_status"] = "❌ No upstox_token in session"
-                elif instrument_key and token:
-                    # Use Market Quote OHLC V3 endpoint with 1d interval (entire day's cumulative OHLC)
-                    url = "https://api.upstox.com/v3/market-quote/ohlc"
-                    params = {
-                        "instrument_key": instrument_key,
-                        "interval": "1d"  # Daily interval: live_ohlc contains cumulative day's high/low
-                    }
-                    headers = {
-                        "Accept": "application/json",
-                        "Authorization": f"Bearer {token}"
-                    }
-                    st.session_state["api_fetch_status"] = f"📡 Calling API for {symbol}..."
-                    response = requests.get(url, params=params, headers=headers, timeout=5)
-                    st.session_state["api_fetch_status"] = f"API Response: {response.status_code}"
-
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.session_state["api_response_full"] = data
-                        st.session_state["api_fetch_status"] = f"✅ Got response, checking data..."
-
-                        if data.get("status") == "success" and data.get("data"):
-                            quote_data = data["data"].get(instrument_key, {})
-                            st.session_state["api_fetch_status"] = f"✅ Found quote_data, looking for ohlc..."
-
-                            # Get OHLC for the day (cumulative high/low)
-                            ohlc = quote_data.get("ohlc", {})
-                            st.session_state["api_fetch_status"] = f"ohlc keys: {list(ohlc.keys())}"
-
-                            if ohlc:
-                                # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
-                                # ohlc contains: open, high, low, close
-                                high = float(ohlc.get("high", spot))  # ← Day's HIGH
-                                low = float(ohlc.get("low", spot))    # ← Day's LOW
-
-                                # Store for debug display
-                                debug_info = {
-                                    "symbol": symbol,
-                                    "ohlc_keys": list(ohlc.keys()),
-                                    "ohlc_data": ohlc,
-                                    "extracted_high": high,
-                                    "extracted_low": low,
-                                    "timestamp": str(datetime.now(IST)),
-                                    "status": "SUCCESS"
-                                }
-                                # Use the exact symbol value as key
-                                cache_key = f"api_response_{symbol}"
-                                st.session_state[cache_key] = debug_info
-                                # Also try alternate key
-                                st.session_state["last_api_debug"] = debug_info
-
-                                # Validate: high should be >= low
-                                if high < low:
-                                    high, low = low, high
-
-                                st.session_state[tracking_key] = {
-                                    "high": high,      # Maximum price for the day
-                                    "low": low,        # Minimum price for the day
-                                    "date": now_ist.date(),
-                                    "last_update": now_ist
-                                }
-                            else:
-                                raise ValueError("No OHLC data")
-                        else:
-                            raise ValueError("API response error")
-                    else:
-                        raise ValueError(f"API error {response.status_code}")
-                else:
+                if not instrument_key or not token:
                     raise ValueError("Missing instrument key or token")
+
+                # Use V2 market-quote/quotes endpoint (as you provided)
+                url = "https://api.upstox.com/v2/market-quote/quotes"
+                params = {"instrument_key": instrument_key}
+                headers = {
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {token}"
+                }
+
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "success" and data.get("data"):
+                        quote = data["data"].get(instrument_key, {})
+                        ohlc = quote.get("ohlc", {})
+                        # IMPORTANT: "high" and "low" are cumulative for the session
+                        high = float(ohlc.get("high", spot))
+                        low  = float(ohlc.get("low", spot))
+
+                        # Sanity check
+                        if high < low:
+                            high, low = low, high
+
+                        st.session_state[tracking_key] = {
+                            "high": high,
+                            "low": low,
+                            "date": now_ist.date(),
+                            "last_update": now_ist
+                        }
+                    else:
+                        raise ValueError("No data in response")
+                else:
+                    raise ValueError(f"API error {response.status_code}")
+
             except Exception as e:
-                # Fallback: use previous tracking or spot
+                # Fallback: keep existing values or use spot
                 if tracking_key not in st.session_state:
                     st.session_state[tracking_key] = {
                         "high": spot,
@@ -2053,12 +2012,12 @@ def _calculate_26_11_levels(spot, symbol):
         tracking = st.session_state[tracking_key]
         high = tracking.get("high", spot)
         low = tracking.get("low", spot)
+
     else:
         # ═══════════════════════════════════════════════════════════════════
-        # MARKET IS CLOSED: Use YESTERDAY's high/low (NOT today's)
+        # MARKET IS CLOSED: Use YESTERDAY's high/low
         # ═══════════════════════════════════════════════════════════════════
         if yesterday_key not in st.session_state:
-            # Fetch from API
             try:
                 yesterday = datetime.now(IST) - timedelta(days=1)
                 yesterday_str = yesterday.strftime("%Y-%m-%d")
@@ -2080,31 +2039,21 @@ def _calculate_26_11_levels(spot, symbol):
                         if data.get("status") == "success" and data.get("data"):
                             candles = data["data"].get("candles", [])
                             if candles:
-                                candle = candles[0]
-                                # Upstox format: [timestamp, open, high, low, close, volume]
-                                # Extract HIGH (index 2) and LOW (index 3) - NOT OPEN!
-                                high = float(candle[2]) if len(candle) > 2 else spot  # ← HIGH
-                                low = float(candle[3]) if len(candle) > 3 else spot   # ← LOW
-
-                                # Validate and swap if high < low
+                                candle = candles[0]  # [timestamp, open, high, low, close, volume]
+                                high = float(candle[2])  # HIGH
+                                low  = float(candle[3])  # LOW
                                 if high < low:
                                     high, low = low, high
-
-                                st.session_state[yesterday_key] = {
-                                    "high": high,  # Yesterday's maximum price
-                                    "low": low     # Yesterday's minimum price
-                                }
-                                high, low = high, low
+                                st.session_state[yesterday_key] = {"high": high, "low": low}
                             else:
-                                raise ValueError("No candles data")
+                                raise ValueError("No candles")
                         else:
-                            raise ValueError("API response error")
+                            raise ValueError("API error")
                     else:
-                        raise ValueError(f"API error {response.status_code}")
+                        raise ValueError(f"HTTP {response.status_code}")
                 else:
-                    raise ValueError("Missing instrument key or token")
-            except Exception as e:
-                # Fallback: use current spot
+                    raise ValueError("Missing key or token")
+            except Exception:
                 high = spot
                 low = spot
                 st.session_state[yesterday_key] = {"high": high, "low": low}
@@ -2115,11 +2064,8 @@ def _calculate_26_11_levels(spot, symbol):
 
     # Calculate 26.11% levels
     range_val = high - low
-
-    # If range is too small (market just opened or no movement), use ATM as reference
     if range_val < 1:
-        # Use a default range based on ATM volatility (~1% of spot)
-        range_val = spot * 0.01
+        range_val = spot * 0.01  # fallback
 
     level_26_11_lower = low + (range_val * 0.2611)
     level_26_11_upper = high - (range_val * 0.2611)
@@ -2131,6 +2077,7 @@ def _calculate_26_11_levels(spot, symbol):
         "low": round(low, 2),
         "is_market_open": is_market_open
     }
+# ================== END FIXED FUNCTION ==================
 
 def _update_pcr_history(symbol, pcr_value):
     """Track last 6 PCR values for trend analysis."""
