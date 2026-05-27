@@ -1938,9 +1938,9 @@ def _calculate_26_11_levels(spot, symbol):
     yesterday_key = f"yesterday_26_11_{symbol}"
 
     if is_market_open:
-        # ═══════════════════════════════════════════════════════════════════
+        # ─────────────────────────────────────────────────────────────────────
         # MARKET IS LIVE: Use TODAY's intraday high/low (updated every 3 mins)
-        # ═══════════════════════════════════════════════════════════════════
+        # ─────────────────────────────────────────────────────────────────────
         should_fetch = False
 
         if tracking_key not in st.session_state:
@@ -1961,12 +1961,12 @@ def _calculate_26_11_levels(spot, symbol):
         if should_fetch:
             try:
                 instrument_key = INSTRUMENT_KEY.get(symbol)
-                token = st.session_state.get("upstox_token")
+                # ✅ FIX: use "access_token" not "upstox_token"
+                token = st.session_state.get("access_token")
 
                 if not instrument_key or not token:
                     raise ValueError("Missing instrument key or token")
 
-                # Use V2 market-quote/quotes endpoint (as you provided)
                 url = "https://api.upstox.com/v2/market-quote/quotes"
                 params = {"instrument_key": instrument_key}
                 headers = {
@@ -1977,10 +1977,16 @@ def _calculate_26_11_levels(spot, symbol):
                 response = requests.get(url, params=params, headers=headers, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
+                    # Store raw response for debug
+                    st.session_state[f"api_response_{symbol}"] = {
+                        "status": "SUCCESS",
+                        "data": data,
+                        "timestamp": str(now_ist)
+                    }
+
                     if data.get("status") == "success" and data.get("data"):
                         quote = data["data"].get(instrument_key, {})
                         ohlc = quote.get("ohlc", {})
-                        # IMPORTANT: "high" and "low" are cumulative for the session
                         high = float(ohlc.get("high", spot))
                         low  = float(ohlc.get("low", spot))
 
@@ -2014,9 +2020,9 @@ def _calculate_26_11_levels(spot, symbol):
         low = tracking.get("low", spot)
 
     else:
-        # ═══════════════════════════════════════════════════════════════════
+        # ─────────────────────────────────────────────────────────────────────
         # MARKET IS CLOSED: Use YESTERDAY's high/low
-        # ═══════════════════════════════════════════════════════════════════
+        # ─────────────────────────────────────────────────────────────────────
         if yesterday_key not in st.session_state:
             try:
                 yesterday = datetime.now(IST) - timedelta(days=1)
@@ -2024,7 +2030,7 @@ def _calculate_26_11_levels(spot, symbol):
                 day_before_str = (yesterday - timedelta(days=1)).strftime("%Y-%m-%d")
 
                 instrument_key = INSTRUMENT_KEY.get(symbol)
-                token = st.session_state.get("upstox_token")
+                token = st.session_state.get("access_token")   # ✅ FIX
 
                 if instrument_key and token:
                     url = f"https://api.upstox.com/v3/historical-candle/{instrument_key}/days/1/{yesterday_str}/{day_before_str}"
