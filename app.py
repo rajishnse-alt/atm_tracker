@@ -1994,23 +1994,23 @@ def _calculate_26_11_levels(spot, symbol):
 
                         if data.get("status") == "success" and data.get("data"):
                             quote_data = data["data"].get(instrument_key, {})
-                            st.session_state["api_fetch_status"] = f"✅ Found quote_data, looking for live_ohlc..."
+                            st.session_state["api_fetch_status"] = f"✅ Found quote_data, looking for ohlc..."
 
-                            # Get live OHLC for the day (cumulative high/low)
-                            live_ohlc = quote_data.get("live_ohlc", {})
-                            st.session_state["api_fetch_status"] = f"live_ohlc keys: {list(live_ohlc.keys())}"
+                            # Get OHLC for the day (cumulative high/low)
+                            ohlc = quote_data.get("ohlc", {})
+                            st.session_state["api_fetch_status"] = f"ohlc keys: {list(ohlc.keys())}"
 
-                            if live_ohlc:
+                            if ohlc:
                                 # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
-                                # live_ohlc contains: open, high, low, close, volume, ts
-                                high = float(live_ohlc.get("high", spot))  # ← Day's HIGH
-                                low = float(live_ohlc.get("low", spot))    # ← Day's LOW
+                                # ohlc contains: open, high, low, close
+                                high = float(ohlc.get("high", spot))  # ← Day's HIGH
+                                low = float(ohlc.get("low", spot))    # ← Day's LOW
 
                                 # Store for debug display
                                 debug_info = {
                                     "symbol": symbol,
-                                    "live_ohlc_keys": list(live_ohlc.keys()),
-                                    "live_ohlc_data": live_ohlc,
+                                    "ohlc_keys": list(ohlc.keys()),
+                                    "ohlc_data": ohlc,
                                     "extracted_high": high,
                                     "extracted_low": low,
                                     "timestamp": str(datetime.now(IST)),
@@ -2033,7 +2033,7 @@ def _calculate_26_11_levels(spot, symbol):
                                     "last_update": now_ist
                                 }
                             else:
-                                raise ValueError("No live OHLC data")
+                                raise ValueError("No OHLC data")
                         else:
                             raise ValueError("API response error")
                     else:
@@ -2622,14 +2622,14 @@ def render_symbol(access_token, sym, vix_info, now_ist):
             if api_debug and api_debug.get("status") == "SUCCESS":
                 st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
                 st.write("**Symbol:**", api_debug.get("symbol", "N/A"))
-                st.write("**live_ohlc Keys:**", api_debug.get("live_ohlc_keys", []))
+                st.write("**OHLC Keys:**", api_debug.get("ohlc_keys", []))
                 st.info(f"🔑 **Extracted HIGH: {api_debug.get('extracted_high', 'N/A')}**")
                 st.info(f"🔑 **Extracted LOW: {api_debug.get('extracted_low', 'N/A')}**")
                 st.write("**Calculated Levels:**")
                 st.write(f"  • Upper (26.11%): {levels_26_11['upper']}")
                 st.write(f"  • Lower (26.11%): {levels_26_11['lower']}")
-                st.write("**Full live_ohlc Response:**")
-                st.json(api_debug.get("live_ohlc_data", {}))
+                st.write("**Full OHLC Response:**")
+                st.json(api_debug.get("ohlc_data", {}))
             else:
                 st.warning("❌ No API data stored - checking conditions...")
                 st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
