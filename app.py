@@ -9,6 +9,7 @@ from scipy.optimize import brentq
 import websocket
 import json
 import threading
+from bs4 import BeautifulSoup
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -2157,45 +2158,149 @@ def _test_websocket_connection(symbol, access_token):
     except Exception as e:
         return False, None, None, 0, str(e)
 
-def _fetch_yesterdays_high_low(symbol):
-    """Fetch yesterday's high/low from Upstox historical data."""
+def _fetch_moneycontrol_high_low(symbol):
+    """
+    Fetch yesterday's high/low from Moneycontrol.com
+    - Indices: Uses sp_High and sp_Low IDs
+    - Equities: Uses nseHP (NSE High) and nseLP (NSE Low) IDs
+    """
     try:
-        headers = upstox_headers(st.session_state.get("access_token"))
-
-        # Get yesterday's date
-        yesterday = datetime.now(IST).date() - __import__('datetime').timedelta(days=1)
-
-        # Use Upstox historical candle API
-        params = {
-            "instrument_key": INSTRUMENT_KEY.get(symbol),
-            "interval": "day",
-            "data_type": "candle",
-            "from_date": yesterday.isoformat(),
-            "to_date": yesterday.isoformat()
+        # Moneycontrol URLs mapping
+        moneycontrol_urls = {
+            "NIFTY": "https://www.moneycontrol.com/indian-indices/nifty-50-9.html",
+            "BANKNIFTY": "https://www.moneycontrol.com/indian-indices/nifty-bank-9.html",
+            "RELIANCE": "https://www.moneycontrol.com/india/stockpricequote/refineries/relianceindustries/RI",
+            "HDFCBANK": "https://www.moneycontrol.com/india/stockpricequote/banks-private-sector/hdfcbank/HDB",
+            "ICICIBANK": "https://www.moneycontrol.com/india/stockpricequote/banks-private-sector/icicibank/ICI",
+            "SBIN": "https://www.moneycontrol.com/india/stockpricequote/banks-public-sector/statebankofindia/SBI",
         }
 
-        response = requests.get(
-            "https://api.upstox.com/v3/historical-candle",
-            params=params,
-            headers=headers,
-            timeout=10
-        )
+        url = moneycontrol_urls.get(symbol)
+        if not url:
+            logging.warning(f"No Moneycontrol URL for {symbol}")
+            return None
 
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'success' and data.get('data', {}).get('candles'):
-                candle = data['data']['candles'][0]
-                # candle format: [timestamp, open, high, low, close, volume, oi]
-                high = float(candle[2])
-                low = float(candle[3])
-                return {
-                    "status": "SUCCESS",
-                    "high": high,
-                    "low": low,
-                    "source": f"Yesterday's High/Low ({yesterday})"
-                }
+        # Fetch page
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Try to extract based on symbol type
+        high = None
+        low = None
+
+        # For indices: look for sp_High and sp_Low
+        if symbol in ["NIFTY", "BANKNIFTY"]:
+            high_elem = soup.find(id="sp_High")
+            low_elem = soup.find(id="sp_Low")
+
+            if high_elem and low_elem:
+                try:
+                    high = float(high_elem.get_text(strip=True))
+                    low = float(low_elem.get_text(strip=True))
+                except (ValueError, AttributeError):
+                    pass
+
+        # For equities: look for nseHP and nseLP
+        else:
+            high_elem = soup.find(id="nseHP")  # NSE High
+            low_elem = soup.find(id="nseLP")   # NSE Low
+
+            if high_elem and low_elem:
+                try:
+                    high = float(high_elem.get_text(strip=True))
+                    low = float(low_elem.get_text(strip=True))
+                except (ValueError, AttributeError):
+                    pass
+
+        if high and low:
+            return {
+                "status": "SUCCESS",
+                "high": high,
+                "low": low,
+                "source": f"Yesterday's High/Low ({symbol}) [Moneycontrol]"
+            }
+
+        logging.warning(f"Could not extract high/low for {symbol} from Moneycontrol")
+        return None
+
     except Exception as e:
-        logging.warning(f"Failed to fetch yesterday's data for {symbol}: {e}")
+        logging.debug(f"Moneycontrol fetch failed for {symbol}: {e}")
+        return None
+
+def _fetch_yesterdays_high_low(symbol):
+    """
+    Fetch yesterday's high/low with fallback chain:
+    1. Moneycontrol (scrape sp_High/sp_Low or nseHP/nseLP)
+    2. yfinance (historical OHLC)
+    3. Upstox API (if available)
+    """
+    # Try Moneycontrol first (most reliable for Indian markets)
+    result = _fetch_moneycontrol_high_low(symbol)
+    if result:
+        return result
+
+    # Fallback to yfinance
+    try:
+        import yfinance as yf
+
+        yesterday = datetime.now(IST).date() - __import__('datetime').timedelta(days=1)
+
+        ticker = yf.Ticker(f"{symbol}.NS")
+        hist = ticker.history(start=yesterday, end=yesterday + __import__('datetime').timedelta(days=1))
+
+        if not hist.empty:
+            high = float(hist['High'].iloc[0])
+            low = float(hist['Low'].iloc[0])
+            return {
+                "status": "SUCCESS",
+                "high": high,
+                "low": low,
+                "source": f"Yesterday's High/Low ({yesterday}) [yfinance]"
+            }
+    except Exception as e:
+        logging.debug(f"yfinance failed for {symbol}: {e}")
+
+    # Final fallback: Try Upstox historical API
+    try:
+        access_token = st.session_state.get("access_token")
+        if access_token:
+            headers = upstox_headers(access_token)
+            yesterday = datetime.now(IST).date() - __import__('datetime').timedelta(days=1)
+
+            params = {
+                "instrument_key": INSTRUMENT_KEY.get(symbol),
+                "interval": "day",
+                "data_type": "candle",
+                "from_date": yesterday.isoformat(),
+                "to_date": yesterday.isoformat()
+            }
+
+            response = requests.get(
+                "https://api.upstox.com/v3/historical-candle",
+                params=params,
+                headers=headers,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('status') == 'success' and data.get('data', {}).get('candles'):
+                    candle = data['data']['candles'][0]
+                    high = float(candle[2])
+                    low = float(candle[3])
+                    return {
+                        "status": "SUCCESS",
+                        "high": high,
+                        "low": low,
+                        "source": f"Yesterday's High/Low ({yesterday}) [Upstox]"
+                    }
+    except Exception as e:
+        logging.debug(f"Upstox API failed for {symbol}: {e}")
 
     return {"status": "ERROR", "message": "Could not fetch yesterday's data"}
 
