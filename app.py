@@ -1938,7 +1938,9 @@ def _calculate_26_11_levels(spot, symbol):
     yesterday_key = f"yesterday_26_11_{symbol}"
 
     if is_market_open:
-        # Market is open - fetch intraday high/low from API every 3 minutes
+        # ═══════════════════════════════════════════════════════════════════
+        # MARKET IS LIVE: Use TODAY's intraday high/low (updated every 3 mins)
+        # ═══════════════════════════════════════════════════════════════════
         should_fetch = False
 
         if tracking_key not in st.session_state:
@@ -1986,16 +1988,18 @@ def _calculate_26_11_levels(spot, symbol):
                             live_ohlc = quote_data.get("live_ohlc", {})
 
                             if live_ohlc:
-                                high = float(live_ohlc.get("high", spot))
-                                low = float(live_ohlc.get("low", spot))
+                                # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
+                                # live_ohlc contains: open, high, low, close, volume, ts
+                                high = float(live_ohlc.get("high", spot))  # ← Day's HIGH
+                                low = float(live_ohlc.get("low", spot))    # ← Day's LOW
 
                                 # Validate: high should be >= low
                                 if high < low:
                                     high, low = low, high
 
                                 st.session_state[tracking_key] = {
-                                    "high": high,
-                                    "low": low,
+                                    "high": high,      # Maximum price for the day
+                                    "low": low,        # Minimum price for the day
                                     "date": now_ist.date(),
                                     "last_update": now_ist
                                 }
@@ -2021,7 +2025,9 @@ def _calculate_26_11_levels(spot, symbol):
         high = tracking.get("high", spot)
         low = tracking.get("low", spot)
     else:
-        # Market is closed - fetch yesterday's high/low from Upstox API
+        # ═══════════════════════════════════════════════════════════════════
+        # MARKET IS CLOSED: Use YESTERDAY's high/low (NOT today's)
+        # ═══════════════════════════════════════════════════════════════════
         if yesterday_key not in st.session_state:
             # Fetch from API
             try:
@@ -2047,14 +2053,18 @@ def _calculate_26_11_levels(spot, symbol):
                             if candles:
                                 candle = candles[0]
                                 # Upstox format: [timestamp, open, high, low, close, volume]
-                                high = float(candle[2]) if len(candle) > 2 else spot
-                                low = float(candle[3]) if len(candle) > 3 else spot
+                                # Extract HIGH (index 2) and LOW (index 3) - NOT OPEN!
+                                high = float(candle[2]) if len(candle) > 2 else spot  # ← HIGH
+                                low = float(candle[3]) if len(candle) > 3 else spot   # ← LOW
 
                                 # Validate and swap if high < low
                                 if high < low:
                                     high, low = low, high
 
-                                st.session_state[yesterday_key] = {"high": high, "low": low}
+                                st.session_state[yesterday_key] = {
+                                    "high": high,  # Yesterday's maximum price
+                                    "low": low     # Yesterday's minimum price
+                                }
                                 high, low = high, low
                             else:
                                 raise ValueError("No candles data")
