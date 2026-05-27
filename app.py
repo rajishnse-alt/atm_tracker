@@ -2157,9 +2157,54 @@ def _test_websocket_connection(symbol, access_token):
     except Exception as e:
         return False, None, None, 0, str(e)
 
+def _fetch_yesterdays_high_low(symbol):
+    """Fetch yesterday's high/low from Upstox historical data."""
+    try:
+        headers = upstox_headers(st.session_state.get("access_token"))
+
+        # Get yesterday's date
+        yesterday = datetime.now(IST).date() - __import__('datetime').timedelta(days=1)
+
+        # Use Upstox historical candle API
+        params = {
+            "instrument_key": INSTRUMENT_KEY.get(symbol),
+            "interval": "day",
+            "data_type": "candle",
+            "from_date": yesterday.isoformat(),
+            "to_date": yesterday.isoformat()
+        }
+
+        response = requests.get(
+            "https://api.upstox.com/v3/historical-candle",
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('status') == 'success' and data.get('data', {}).get('candles'):
+                candle = data['data']['candles'][0]
+                # candle format: [timestamp, open, high, low, close, volume, oi]
+                high = float(candle[2])
+                low = float(candle[3])
+                return {
+                    "status": "SUCCESS",
+                    "high": high,
+                    "low": low,
+                    "source": f"Yesterday's High/Low ({yesterday})"
+                }
+    except Exception as e:
+        logging.warning(f"Failed to fetch yesterday's data for {symbol}: {e}")
+
+    return {"status": "ERROR", "message": "Could not fetch yesterday's data"}
+
 def _fetch_upstox_data(symbol, access_token):
-    """Fetch intraday high/low from Upstox WebSocket."""
-    # Initialize WebSocket if not already running
+    """
+    Fetch intraday high/low from Upstox WebSocket (real-time during market hours).
+    Falls back to yesterday's high/low when market is closed.
+    """
+    # Try WebSocket first (during market hours)
     ws_key = f"ws_started_{symbol}"
     if ws_key not in st.session_state and access_token:
         _start_upstox_websocket(symbol, access_token)
@@ -2167,6 +2212,7 @@ def _fetch_upstox_data(symbol, access_token):
 
     high, low = _get_session_high_low(symbol)
 
+    # If WebSocket has data, use it (real-time during market hours)
     if high is not None and low is not None:
         return {
             "status": "SUCCESS",
@@ -2174,7 +2220,17 @@ def _fetch_upstox_data(symbol, access_token):
             "low": low,
             "source": "Upstox WebSocket (real-time)"
         }
+
+    # Market closed or no ticks yet - use yesterday's high/low
+    now_ist = datetime.now(IST)
+    is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16
+
+    if not is_market_open:
+        # Market is closed, fetch yesterday's data
+        logging.info(f"Market closed, fetching yesterday's high/low for {symbol}")
+        return _fetch_yesterdays_high_low(symbol)
     else:
+        # Market is open but WebSocket initializing
         return {
             "status": "WAITING",
             "message": "Initializing Upstox WebSocket..."
@@ -2213,15 +2269,15 @@ def _calculate_26_11_levels(spot, symbol):
             "high": high,
             "low": low,
             "timestamp": str(datetime.now(IST)),
-            "source": result.get("source", "Upstox WebSocket")
+            "source": result.get("source", "Upstox")
         }
     else:
         # Not ready yet (waiting for WebSocket data) or error occurred
         status_msg = result.get('message', 'Unknown error')
         if result["status"] == "WAITING":
-            st.session_state["api_fetch_status"] = f"Upstox WebSocket: {status_msg}"
+            st.session_state["api_fetch_status"] = f"🔄 WebSocket initializing: {status_msg}"
         else:
-            st.session_state["api_fetch_error"] = f"Upstox fetch failed: {status_msg}"
+            st.session_state["api_fetch_error"] = f"Data fetch failed: {status_msg}"
         high = spot
         low = spot
 
@@ -2746,9 +2802,20 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
                 st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
             else:
-                st.warning("⏳ Waiting for WebSocket data from Upstox...")
-                st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
-                st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
+                # Check if using yesterday's data
+                source = nse_debug.get("source", "")
+                if "Yesterday" in source or "day" in source.lower():
+                    st.info(f"📅 Using Yesterday's Data")
+                    st.write(f"**Source:** {nse_debug.get('source', 'N/A')}")
+                    st.write(f"**Intraday HIGH:** {nse_debug.get('high', 'N/A')}")
+                    st.write(f"**Intraday LOW:** {nse_debug.get('low', 'N/A')}")
+                    st.write(f"**Calculated 26.11% Levels:**")
+                    st.write(f"  • Upper: {levels_26_11['upper']}")
+                    st.write(f"  • Lower: {levels_26_11['lower']}")
+                else:
+                    st.warning("⏳ Waiting for WebSocket data from Upstox...")
+                    st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
+                    st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
 
                 # Show WebSocket status
                 st.markdown("### 📡 WebSocket Diagnostic")
