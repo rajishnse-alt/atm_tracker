@@ -1988,16 +1988,19 @@ def _calculate_26_11_levels(spot, symbol):
                             live_ohlc = quote_data.get("live_ohlc", {})
 
                             if live_ohlc:
-                                # DEBUG: Print what we're getting from API
-                                st.write(f"DEBUG live_ohlc keys: {live_ohlc.keys()}")
-                                st.write(f"DEBUG live_ohlc data: {live_ohlc}")
+                                # DEBUG: Store API response for debugging
+                                debug_key = f"show_debug_{symbol}"
+                                if st.session_state.get(debug_key, False):
+                                    st.write(f"**DEBUG live_ohlc keys:** {list(live_ohlc.keys())}")
+                                    st.write(f"**DEBUG live_ohlc data:** {live_ohlc}")
 
                                 # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
                                 # live_ohlc contains: open, high, low, close, volume, ts
                                 high = float(live_ohlc.get("high", spot))  # ← Day's HIGH
                                 low = float(live_ohlc.get("low", spot))    # ← Day's LOW
 
-                                st.write(f"DEBUG Extracted: high={high}, low={low}")
+                                if st.session_state.get(debug_key, False):
+                                    st.write(f"**DEBUG Extracted:** high={high}, low={low}")
 
                                 # Validate: high should be >= low
                                 if high < low:
@@ -2498,9 +2501,18 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     if expiry_key not in st.session_state:               st.session_state[expiry_key] = expiry_dates[0]
     if st.session_state[expiry_key] not in expiry_dates: st.session_state[expiry_key] = expiry_dates[0]
 
-    selected = st.selectbox(f"Expiry — {DISPLAY_NAME[sym]}", options=expiry_dates,
-                            index=expiry_dates.index(st.session_state[expiry_key]),
-                            key=f"sb_{sym}")
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        selected = st.selectbox(f"Expiry — {DISPLAY_NAME[sym]}", options=expiry_dates,
+                                index=expiry_dates.index(st.session_state[expiry_key]),
+                                key=f"sb_{sym}")
+    with col2:
+        debug_key = f"show_debug_{sym}"
+        if debug_key not in st.session_state:
+            st.session_state[debug_key] = False
+        if st.button("🔍 Log", key=f"btn_debug_{sym}"):
+            st.session_state[debug_key] = not st.session_state[debug_key]
+
     st.session_state[expiry_key] = selected
 
     with st.spinner(""):
