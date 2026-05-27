@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
-from nsefast.collectors import equity
+import yfinance as yf
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -1940,31 +1940,39 @@ def _calculate_26_11_levels(spot, symbol):
     low = spot
 
     try:
-        # Use nsefast library to get intraday high/low
-        df = equity.live_quotes(symbol=symbol)
+        # Convert symbol to yfinance format (e.g., RELIANCE -> RELIANCE.NS)
+        yf_symbol = f"{symbol}.NS"
 
-        if df is not None and len(df) > 0:
-            # Extract high and low from the first row
-            high = float(df["high"].iloc[0])
-            low = float(df["low"].iloc[0])
+        # Get intraday data for today using 1-minute interval
+        stock = yf.Ticker(yf_symbol)
+        data = stock.history(period="1d", interval="1m")
+
+        if data is not None and len(data) > 0:
+            # Get the absolute High and Low for the day
+            high = float(data['High'].max())
+            low = float(data['Low'].min())
 
             # Store debug info
             st.session_state["api_response_NSE"] = {
                 "symbol": symbol,
+                "yf_symbol": yf_symbol,
                 "status": "SUCCESS",
                 "high": high,
                 "low": low,
+                "num_candles": len(data),
                 "timestamp": str(datetime.now(IST)),
-                "source": "nsefast Library"
+                "source": "yfinance 1m intraday"
             }
 
             # Validate and swap if high < low
             if high < low:
                 high, low = low, high
+        else:
+            raise ValueError(f"No intraday data for {yf_symbol}")
 
     except Exception as e:
         # Log error but continue with fallback
-        st.session_state["api_fetch_error"] = f"NSE fetch failed: {str(e)}"
+        st.session_state["api_fetch_error"] = f"yfinance fetch failed: {str(e)}"
         high = spot
         low = spot
 
