@@ -1928,53 +1928,94 @@ def parse_entry_prices(text_input):
 
 def _calculate_26_11_levels(spot, symbol):
     """
-    Calculate 26.11% reversal levels based on intraday high/low using NSE data.
-    Uses NSE library for reliable intraday high/low values.
+    Calculate 26.11% reversal levels based on intraday high/low using yfinance.
+    Caches data and refreshes every 3 minutes to avoid rate limiting.
     """
     now_ist = datetime.now(IST)
     is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16  # Mon-Fri, 9am-4pm
 
-    cache_key = f"nse_quote_{symbol}"
+    tracking_key = f"yf_tracking_{symbol}"
+    debug_key = f"api_response_{symbol}"
 
     high = spot
     low = spot
 
-    try:
-        # Convert symbol to yfinance format (e.g., RELIANCE -> RELIANCE.NS)
-        yf_symbol = f"{symbol}.NS"
-
-        # Get intraday data for today using 1-minute interval
-        stock = yf.Ticker(yf_symbol)
-        data = stock.history(period="1d", interval="1m")
-
-        if data is not None and len(data) > 0:
-            # Get the absolute High and Low for the day
-            high = float(data['High'].max())
-            low = float(data['Low'].min())
-
-            # Store debug info
-            st.session_state["api_response_NSE"] = {
-                "symbol": symbol,
-                "yf_symbol": yf_symbol,
-                "status": "SUCCESS",
-                "high": high,
-                "low": low,
-                "num_candles": len(data),
-                "timestamp": str(datetime.now(IST)),
-                "source": "yfinance 1m intraday"
-            }
-
-            # Validate and swap if high < low
-            if high < low:
-                high, low = low, high
+    # Check if we should fetch fresh data (every 3 minutes or new day)
+    should_fetch = False
+    if tracking_key not in st.session_state:
+        should_fetch = True
+    else:
+        tracking = st.session_state[tracking_key]
+        # Check if date changed
+        if tracking.get("date") != now_ist.date():
+            should_fetch = True
         else:
-            raise ValueError(f"No intraday data for {yf_symbol}")
+            # Check if 3 minutes have passed since last update
+            last_update = tracking.get("last_update")
+            if last_update:
+                time_elapsed = (now_ist - last_update).total_seconds() / 60
+                if time_elapsed >= 3:
+                    should_fetch = True
+            else:
+                should_fetch = True
 
-    except Exception as e:
-        # Log error but continue with fallback
-        st.session_state["api_fetch_error"] = f"yfinance fetch failed: {str(e)}"
-        high = spot
-        low = spot
+    if should_fetch:
+        try:
+            # Convert symbol to yfinance format (e.g., RELIANCE -> RELIANCE.NS)
+            yf_symbol = f"{symbol}.NS"
+
+            # Get intraday data for today using 1-minute interval
+            stock = yf.Ticker(yf_symbol)
+            data = stock.history(period="1d", interval="1m")
+
+            if data is not None and len(data) > 0:
+                # Get the absolute High and Low for the day
+                high = float(data['High'].max())
+                low = float(data['Low'].min())
+
+                # Validate and swap if high < low
+                if high < low:
+                    high, low = low, high
+
+                # Store debug info with symbol-specific key
+                st.session_state[debug_key] = {
+                    "symbol": symbol,
+                    "yf_symbol": yf_symbol,
+                    "status": "SUCCESS",
+                    "high": high,
+                    "low": low,
+                    "num_candles": len(data),
+                    "timestamp": str(datetime.now(IST)),
+                    "source": "yfinance 1m intraday"
+                }
+
+                # Cache the tracking info
+                st.session_state[tracking_key] = {
+                    "high": high,
+                    "low": low,
+                    "date": now_ist.date(),
+                    "last_update": now_ist
+                }
+            else:
+                raise ValueError(f"No intraday data for {yf_symbol}")
+
+        except Exception as e:
+            # Log error but continue with fallback
+            st.session_state["api_fetch_error"] = f"yfinance fetch failed: {str(e)}"
+            # Use previous cache if available
+            if tracking_key in st.session_state:
+                tracking = st.session_state[tracking_key]
+                high = tracking.get("high", spot)
+                low = tracking.get("low", spot)
+            else:
+                high = spot
+                low = spot
+    else:
+        # Use cached data
+        if tracking_key in st.session_state:
+            tracking = st.session_state[tracking_key]
+            high = tracking.get("high", spot)
+            low = tracking.get("low", spot)
 
     # Calculate 26.11% levels
     range_val = high - low
@@ -2483,8 +2524,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
             if api_error:
                 st.error(f"🔴 **ERROR:** {api_error}")
 
-            # Get NSE quote data
-            nse_debug = st.session_state.get("api_response_NSE", {})
+            # Get NSE quote data (symbol-specific key)
+            nse_debug = st.session_state.get(f"api_response_{sym}", {})
 
             if nse_debug and nse_debug.get("status") == "SUCCESS":
                 st.success(f"✅ NSE Data captured at: {nse_debug.get('timestamp', 'N/A')}")
