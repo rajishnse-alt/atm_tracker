@@ -1973,11 +1973,10 @@ def _calculate_26_11_levels(spot, symbol):
                 elif not token:
                     st.session_state["api_fetch_status"] = "❌ No upstox_token in session"
                 elif instrument_key and token:
-                    # Use Market Quote OHLC V3 endpoint with 1d interval (entire day's cumulative OHLC)
-                    url = "https://api.upstox.com/v3/market-quote/ohlc"
+                    # Use Market Quote V2 endpoint (returns data.ohlc with high/low)
+                    url = "https://api.upstox.com/v2/market-quote/quotes"
                     params = {
-                        "instrument_key": instrument_key,
-                        "interval": "1d"  # Daily interval: live_ohlc contains cumulative day's high/low
+                        "instrument_key": instrument_key
                     }
                     headers = {
                         "Accept": "application/json",
@@ -1986,6 +1985,9 @@ def _calculate_26_11_levels(spot, symbol):
                     st.session_state["api_fetch_status"] = f"📡 Calling API for {symbol}..."
                     response = requests.get(url, params=params, headers=headers, timeout=5)
                     st.session_state["api_fetch_status"] = f"API Response: {response.status_code}"
+
+                    # ALWAYS store the raw response for debugging
+                    st.session_state["api_raw_response"] = response.text
 
                     if response.status_code == 200:
                         data = response.json()
@@ -2041,6 +2043,10 @@ def _calculate_26_11_levels(spot, symbol):
                 else:
                     raise ValueError("Missing instrument key or token")
             except Exception as e:
+                # LOG THE ERROR for debugging
+                st.session_state["api_fetch_error"] = str(e)
+                st.session_state["api_fetch_status"] = f"❌ ERROR: {str(e)}"
+
                 # Fallback: use previous tracking or spot
                 if tracking_key not in st.session_state:
                     st.session_state[tracking_key] = {
@@ -2614,6 +2620,15 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     debug_key = f"show_debug_{sym}"
     if st.session_state.get(debug_key, False):
         with st.expander("🔍 **DEBUG LOG** - 26.11 Levels API Data", expanded=True):
+            # Check for errors first
+            api_error = st.session_state.get("api_fetch_error")
+            fetch_status = st.session_state.get("api_fetch_status", "No status")
+
+            st.write(f"**Fetch Status:** {fetch_status}")
+
+            if api_error:
+                st.error(f"🔴 **ERROR OCCURRED:** {api_error}")
+
             # Try multiple keys to find the data
             api_debug = st.session_state.get(f"api_response_{sym}") or \
                        st.session_state.get("last_api_debug") or \
@@ -2631,9 +2646,22 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write("**Full OHLC Response:**")
                 st.json(api_debug.get("ohlc_data", {}))
             else:
-                st.warning("❌ No API data stored - checking conditions...")
+                st.warning("❌ No API data stored - API likely failed")
                 st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                 st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
+
+                # Show raw API response if available
+                raw_response = st.session_state.get("api_raw_response")
+                if raw_response:
+                    st.write("**Raw API Response:**")
+                    st.code(raw_response, language="json")
+
+                # Show full API response
+                full_response = st.session_state.get("api_response_full")
+                if full_response:
+                    st.write("**Parsed API Response:**")
+                    st.json(full_response)
+
                 all_keys = [k for k in st.session_state.keys() if "api" in k.lower() or "26_11" in k.lower()]
                 st.write(f"Session keys with 'api' or '26_11': {all_keys}")
 
