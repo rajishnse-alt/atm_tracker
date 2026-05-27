@@ -1932,7 +1932,7 @@ def _calculate_26_11_levels(spot, symbol):
     If market is open, track and update with new highs/lows.
     """
     now_ist = datetime.now(IST)
-    is_market_open = now_ist.weekday() < 4 and 9 <= now_ist.hour < 16  # Mon-Thu, 9am-4pm
+    is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16  # Mon-Fri, 9am-4pm
 
     tracking_key = f"tracking_26_11_{symbol}"
     yesterday_key = f"yesterday_26_11_{symbol}"
@@ -1966,7 +1966,13 @@ def _calculate_26_11_levels(spot, symbol):
                 instrument_key = INSTRUMENT_KEY.get(symbol)
                 token = st.session_state.get("upstox_token")
 
-                if instrument_key and token:
+                st.session_state["api_fetch_status"] = f"Attempting fetch for {symbol}..."
+
+                if not instrument_key:
+                    st.session_state["api_fetch_status"] = f"❌ No instrument_key for {symbol}"
+                elif not token:
+                    st.session_state["api_fetch_status"] = "❌ No upstox_token in session"
+                elif instrument_key and token:
                     # Use Market Quote OHLC V3 endpoint with 1d interval (entire day's cumulative OHLC)
                     url = "https://api.upstox.com/v3/market-quote/ohlc"
                     params = {
@@ -1977,15 +1983,22 @@ def _calculate_26_11_levels(spot, symbol):
                         "Accept": "application/json",
                         "Authorization": f"Bearer {token}"
                     }
+                    st.session_state["api_fetch_status"] = f"📡 Calling API for {symbol}..."
                     response = requests.get(url, params=params, headers=headers, timeout=5)
+                    st.session_state["api_fetch_status"] = f"API Response: {response.status_code}"
 
                     if response.status_code == 200:
                         data = response.json()
+                        st.session_state["api_response_full"] = data
+                        st.session_state["api_fetch_status"] = f"✅ Got response, checking data..."
+
                         if data.get("status") == "success" and data.get("data"):
                             quote_data = data["data"].get(instrument_key, {})
+                            st.session_state["api_fetch_status"] = f"✅ Found quote_data, looking for live_ohlc..."
 
                             # Get live OHLC for the day (cumulative high/low)
                             live_ohlc = quote_data.get("live_ohlc", {})
+                            st.session_state["api_fetch_status"] = f"live_ohlc keys: {list(live_ohlc.keys())}"
 
                             if live_ohlc:
                                 # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
@@ -2522,28 +2535,6 @@ def render_symbol(access_token, sym, vix_info, now_ist):
 
     st.session_state[expiry_key] = selected
 
-    # DEBUG SECTION - Placeholder for API debug info
-    debug_key = f"show_debug_{sym}"
-    if st.session_state.get(debug_key, False):
-        with st.expander("🔍 **DEBUG LOG** - API Data", expanded=True):
-            # Try multiple keys to find the data
-            api_debug = st.session_state.get(f"api_response_{sym}") or \
-                       st.session_state.get("last_api_debug") or \
-                       {}
-
-            if api_debug and api_debug.get("status") == "SUCCESS":
-                st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
-                st.write("**Symbol:**", api_debug.get("symbol", "N/A"))
-                st.write("**live_ohlc Keys:**", api_debug.get("live_ohlc_keys", []))
-                st.info(f"🔑 **Extracted HIGH: {api_debug.get('extracted_high', 'N/A')}**")
-                st.info(f"🔑 **Extracted LOW: {api_debug.get('extracted_low', 'N/A')}**")
-                st.write("**Full Response:**")
-                st.json(api_debug.get("live_ohlc_data", {}))
-            else:
-                st.warning("❌ No API data yet - waiting for market quote fetch...")
-                all_keys = [k for k in st.session_state.keys() if "api" in k.lower() or "debug" in k.lower()]
-                st.write(f"Session keys with 'api' or 'debug': {all_keys}")
-
     with st.spinner(""):
         data, chain_err, used_url = fetch_chain(access_token, sym, selected)
 
@@ -2616,8 +2607,35 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # Calculate days to expiry for Black-Scholes pricing
     days_to_expiry = calculate_days_to_expiry(selected, now_ist)
 
-    # Calculate 26.11 reversal levels
+    # Calculate 26.11 reversal levels (this fetches API data and stores in session_state)
     levels_26_11 = _calculate_26_11_levels(result['spot'], sym)
+
+    # DEBUG SECTION - Now API data is available in session_state
+    debug_key = f"show_debug_{sym}"
+    if st.session_state.get(debug_key, False):
+        with st.expander("🔍 **DEBUG LOG** - 26.11 Levels API Data", expanded=True):
+            # Try multiple keys to find the data
+            api_debug = st.session_state.get(f"api_response_{sym}") or \
+                       st.session_state.get("last_api_debug") or \
+                       {}
+
+            if api_debug and api_debug.get("status") == "SUCCESS":
+                st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
+                st.write("**Symbol:**", api_debug.get("symbol", "N/A"))
+                st.write("**live_ohlc Keys:**", api_debug.get("live_ohlc_keys", []))
+                st.info(f"🔑 **Extracted HIGH: {api_debug.get('extracted_high', 'N/A')}**")
+                st.info(f"🔑 **Extracted LOW: {api_debug.get('extracted_low', 'N/A')}**")
+                st.write("**Calculated Levels:**")
+                st.write(f"  • Upper (26.11%): {levels_26_11['upper']}")
+                st.write(f"  • Lower (26.11%): {levels_26_11['lower']}")
+                st.write("**Full live_ohlc Response:**")
+                st.json(api_debug.get("live_ohlc_data", {}))
+            else:
+                st.warning("❌ No API data stored - checking conditions...")
+                st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
+                st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
+                all_keys = [k for k in st.session_state.keys() if "api" in k.lower() or "26_11" in k.lower()]
+                st.write(f"Session keys with 'api' or '26_11': {all_keys}")
 
     st.markdown(
         f"<div class='inst-card'>"
