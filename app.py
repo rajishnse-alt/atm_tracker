@@ -1931,23 +1931,16 @@ def parse_entry_prices(text_input):
     return ce_data, pe_data
 
 def _get_session_high_low(symbol):
-    """
-    Get intraday session high and low from st.session_state.
-    These are tracked in real-time via WebSocket when available.
-    Falls back to spot price if market just opened.
-    """
+    """Get intraday session high and low from st.session_state."""
     state_key = f"session_high_low_{symbol}"
-
     if state_key not in st.session_state:
         return None, None
-
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
 def _update_session_high_low(symbol, ltp):
     """Update session high/low with each new tick."""
     state_key = f"session_high_low_{symbol}"
-
     if state_key not in st.session_state:
         st.session_state[state_key] = {"high": ltp, "low": ltp, "ticks": 1}
     else:
@@ -1958,35 +1951,97 @@ def _update_session_high_low(symbol, ltp):
             data["low"] = ltp
         data["ticks"] = data.get("ticks", 0) + 1
 
-def _get_upstox_instrument_key(symbol):
-    """Convert symbol to Upstox instrument key format."""
-    # NSE_EQ|INE002A01018 for equity
-    # You may need to map symbols to their ISIN codes
-    # For now, using a placeholder that returns the format
-    return f"NSE_EQ|{symbol}"  # Replace with actual ISIN mapping if available
+def _start_upstox_websocket(symbol, access_token):
+    """
+    Start Upstox WebSocket connection in background thread.
+    Subscribes to live ticks and updates session high/low.
+    """
+    if not access_token:
+        return
+
+    def on_message(ws, message):
+        try:
+            data = json.loads(message)
+            # Handle different message types from Upstox
+            if 'ltp' in data:  # Last Traded Price
+                ltp = float(data['ltp'])
+                _update_session_high_low(symbol, ltp)
+            elif 'lastPrice' in data:  # Alternative field name
+                ltp = float(data['lastPrice'])
+                _update_session_high_low(symbol, ltp)
+        except Exception as e:
+            logging.warning(f"WebSocket message error: {e}")
+
+    def on_error(ws, error):
+        logging.warning(f"WebSocket error for {symbol}: {error}")
+
+    def on_close(ws, close_status_code, close_msg):
+        logging.info(f"WebSocket closed for {symbol}")
+
+    def on_open(ws):
+        try:
+            # Subscription payload for Upstox V3
+            payload = {
+                "guid": f"stream-{symbol}",
+                "method": "sub",
+                "data": {
+                    "instrument_keys": [f"NSE_EQ|{symbol}"],
+                    "mode": "full"
+                }
+            }
+            ws.send(json.dumps(payload))
+            logging.info(f"Subscribed to {symbol} WebSocket")
+        except Exception as e:
+            logging.warning(f"WebSocket subscription error: {e}")
+
+    try:
+        # Get WebSocket URL from Upstox authorize endpoint
+        headers = upstox_headers(access_token)
+        response = requests.get(
+            "https://api.upstox.com/v3/feed/market-data-feed/authorize",
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            ws_url = response.json().get('data', {}).get('authorizedRedirectUri')
+            if ws_url:
+                ws = websocket.WebSocketApp(
+                    ws_url,
+                    on_open=on_open,
+                    on_message=on_message,
+                    on_error=on_error,
+                    on_close=on_close
+                )
+                # Run in daemon thread so it doesn't block the app
+                ws_thread = threading.Thread(target=ws.run_forever, daemon=True)
+                ws_thread.start()
+                logging.info(f"WebSocket thread started for {symbol}")
+    except Exception as e:
+        logging.warning(f"Failed to start WebSocket for {symbol}: {e}")
 
 def _fetch_upstox_data(symbol, access_token):
-    """
-    Fetch intraday high/low from Upstox WebSocket (real-time).
-    Returns cached session high/low if available, otherwise None.
-    """
-    try:
-        high, low = _get_session_high_low(symbol)
+    """Fetch intraday high/low from Upstox WebSocket."""
+    # Initialize WebSocket if not already running
+    ws_key = f"ws_started_{symbol}"
+    if ws_key not in st.session_state and access_token:
+        _start_upstox_websocket(symbol, access_token)
+        st.session_state[ws_key] = True
 
-        if high is not None and low is not None:
-            return {
-                "status": "SUCCESS",
-                "high": high,
-                "low": low,
-                "source": "Upstox WebSocket (real-time)"
-            }
-        else:
-            return {
-                "status": "WAITING",
-                "message": "Awaiting real-time data from Upstox WebSocket"
-            }
-    except Exception as e:
-        return {"status": "ERROR", "message": str(e)}
+    high, low = _get_session_high_low(symbol)
+
+    if high is not None and low is not None:
+        return {
+            "status": "SUCCESS",
+            "high": high,
+            "low": low,
+            "source": "Upstox WebSocket (real-time)"
+        }
+    else:
+        return {
+            "status": "WAITING",
+            "message": "Initializing Upstox WebSocket..."
+        }
 
 def _calculate_26_11_levels(spot, symbol):
     """
