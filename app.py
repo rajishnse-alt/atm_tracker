@@ -1982,6 +1982,10 @@ def _calculate_26_11_levels(spot, symbol):
                                 lows = [float(candle[3]) for candle in candles if len(candle) > 3]
                                 high = max(highs) if highs else spot
                                 low = min(lows) if lows else spot
+
+                                # Ensure high >= low (swap if needed)
+                                if high < low:
+                                    high, low = low, high
                                 st.session_state[tracking_key] = {
                                     "high": high,
                                     "low": low,
@@ -2037,6 +2041,11 @@ def _calculate_26_11_levels(spot, symbol):
                                 candle = candles[0]
                                 high = float(candle[2]) if len(candle) > 2 else spot
                                 low = float(candle[3]) if len(candle) > 3 else spot
+
+                                # Ensure high >= low (swap if needed)
+                                if high < low:
+                                    high, low = low, high
+
                                 st.session_state[yesterday_key] = {"high": high, "low": low}
                                 high, low = high, low
                             else:
@@ -2554,9 +2563,9 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"    <div class='inst-spot'>₹{result['spot']:,.2f}</div>"
         f"    <div class='inst-atm'>ATM → {result['atm']}</div>"
         f"    <div style='font-family:var(--mono);font-size:9px;color:#ffc940;margin-top:4px;'>"
-        f"      (26.11% High) · {levels_26_11['upper']}"
+        f"      (26.11% High) · {levels_26_11['upper']} <span style='color:#999;font-size:8px;'>(H:{levels_26_11['high']} L:{levels_26_11['low']})</span>"
         f"      <br/>"
-        f"      (26.11% Low) · {levels_26_11['lower']}"
+        f"      (26.11% Low) · {levels_26_11['lower']} <span style='color:#999;font-size:8px;'>(H:{levels_26_11['high']} L:{levels_26_11['low']})</span>"
         f"    </div>"
         f"  </div></div>"
         f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, days_to_expiry)}"
