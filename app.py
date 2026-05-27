@@ -6,6 +6,7 @@ from datetime import datetime
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
+from nse import NSE
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -1927,197 +1928,50 @@ def parse_entry_prices(text_input):
 
 def _calculate_26_11_levels(spot, symbol):
     """
-    Calculate 26.11% reversal levels based on intraday high/low.
-    If market is closed, use yesterday's high/low.
-    If market is open, track and update with new highs/lows.
+    Calculate 26.11% reversal levels based on intraday high/low using NSE data.
+    Uses NSE library for reliable intraday high/low values.
     """
     now_ist = datetime.now(IST)
     is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16  # Mon-Fri, 9am-4pm
 
-    tracking_key = f"tracking_26_11_{symbol}"
-    yesterday_key = f"yesterday_26_11_{symbol}"
+    cache_key = f"nse_quote_{symbol}"
 
-    if is_market_open:
-        # ═══════════════════════════════════════════════════════════════════
-        # MARKET IS LIVE: Use TODAY's intraday high/low (updated every 3 mins)
-        # ═══════════════════════════════════════════════════════════════════
-        should_fetch = False
+    high = spot
+    low = spot
 
-        if tracking_key not in st.session_state:
-            should_fetch = True
-        else:
-            tracking = st.session_state[tracking_key]
-            # Check if date changed
-            if tracking.get("date") != now_ist.date():
-                should_fetch = True
-            else:
-                # Check if 3 minutes have passed since last update
-                last_update = tracking.get("last_update")
-                if last_update:
-                    time_elapsed = (now_ist - last_update).total_seconds() / 60
-                    if time_elapsed >= 3:
-                        should_fetch = True
-                else:
-                    should_fetch = True
+    try:
+        # Use NSE library to get intraday high/low
+        nse = NSE()
+        quote = nse.get_quote(symbol)
 
-        if should_fetch:
-            # Fetch real-time intraday OHLC from Market Quote API
-            try:
-                instrument_key = INSTRUMENT_KEY.get(symbol)
-                token = st.session_state.get("upstox_token")
+        if quote and "priceInfo" in quote:
+            price_info = quote["priceInfo"]
 
-                st.session_state["api_fetch_status"] = f"Attempting fetch for {symbol}..."
+            # Get intraday high/low
+            if "intraDayHighLow" in price_info:
+                intra = price_info["intraDayHighLow"]
+                high = float(intra.get("max", spot))
+                low = float(intra.get("min", spot))
 
-                if not instrument_key:
-                    st.session_state["api_fetch_status"] = f"❌ No instrument_key for {symbol}"
-                elif not token:
-                    st.session_state["api_fetch_status"] = "❌ No upstox_token in session"
-                elif instrument_key and token:
-                    # Use Market Quote V2 endpoint (returns data.ohlc with high/low)
-                    url = "https://api.upstox.com/v2/market-quote/quotes"
-                    params = {
-                        "instrument_key": instrument_key
-                    }
-                    headers = {
-                        "Accept": "application/json",
-                        "Authorization": f"Bearer {token}"
-                    }
-                    st.session_state["api_fetch_status"] = f"📡 Calling API for {symbol}..."
-                    response = requests.get(url, params=params, headers=headers, timeout=5)
-                    st.session_state["api_fetch_status"] = f"API Response: {response.status_code}"
+            # Store debug info
+            st.session_state["api_response_NSE"] = {
+                "symbol": symbol,
+                "status": "SUCCESS",
+                "high": high,
+                "low": low,
+                "timestamp": str(datetime.now(IST)),
+                "source": "NSE Library"
+            }
 
-                    # ALWAYS store the raw response for debugging
-                    st.session_state["api_raw_response"] = response.text
+            # Validate and swap if high < low
+            if high < low:
+                high, low = low, high
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.session_state["api_response_full"] = data
-                        st.session_state["api_fetch_status"] = f"✅ Got response, checking data..."
-
-                        if data.get("status") == "success" and data.get("data"):
-                            quote_data = data["data"].get(instrument_key, {})
-                            st.session_state["api_fetch_status"] = f"✅ Found quote_data, looking for ohlc..."
-
-                            # Get OHLC for the day (cumulative high/low)
-                            ohlc = quote_data.get("ohlc", {})
-                            st.session_state["api_fetch_status"] = f"ohlc keys: {list(ohlc.keys())}"
-
-                            if ohlc:
-                                # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
-                                # ohlc contains: open, high, low, close
-                                high = float(ohlc.get("high", spot))  # ← Day's HIGH
-                                low = float(ohlc.get("low", spot))    # ← Day's LOW
-
-                                # Store for debug display
-                                debug_info = {
-                                    "symbol": symbol,
-                                    "ohlc_keys": list(ohlc.keys()),
-                                    "ohlc_data": ohlc,
-                                    "extracted_high": high,
-                                    "extracted_low": low,
-                                    "timestamp": str(datetime.now(IST)),
-                                    "status": "SUCCESS"
-                                }
-                                # Use the exact symbol value as key
-                                cache_key = f"api_response_{symbol}"
-                                st.session_state[cache_key] = debug_info
-                                # Also try alternate key
-                                st.session_state["last_api_debug"] = debug_info
-
-                                # Validate: high should be >= low
-                                if high < low:
-                                    high, low = low, high
-
-                                st.session_state[tracking_key] = {
-                                    "high": high,      # Maximum price for the day
-                                    "low": low,        # Minimum price for the day
-                                    "date": now_ist.date(),
-                                    "last_update": now_ist
-                                }
-                            else:
-                                raise ValueError("No OHLC data")
-                        else:
-                            raise ValueError("API response error")
-                    else:
-                        raise ValueError(f"API error {response.status_code}")
-                else:
-                    raise ValueError("Missing instrument key or token")
-            except Exception as e:
-                # LOG THE ERROR for debugging
-                st.session_state["api_fetch_error"] = str(e)
-                st.session_state["api_fetch_status"] = f"❌ ERROR: {str(e)}"
-
-                # Fallback: use previous tracking or spot
-                if tracking_key not in st.session_state:
-                    st.session_state[tracking_key] = {
-                        "high": spot,
-                        "low": spot,
-                        "date": now_ist.date(),
-                        "last_update": now_ist
-                    }
-
-        tracking = st.session_state[tracking_key]
-        high = tracking.get("high", spot)
-        low = tracking.get("low", spot)
-    else:
-        # ═══════════════════════════════════════════════════════════════════
-        # MARKET IS CLOSED: Use YESTERDAY's high/low (NOT today's)
-        # ═══════════════════════════════════════════════════════════════════
-        if yesterday_key not in st.session_state:
-            # Fetch from API
-            try:
-                yesterday = datetime.now(IST) - timedelta(days=1)
-                yesterday_str = yesterday.strftime("%Y-%m-%d")
-                day_before_str = (yesterday - timedelta(days=1)).strftime("%Y-%m-%d")
-
-                instrument_key = INSTRUMENT_KEY.get(symbol)
-                token = st.session_state.get("upstox_token")
-
-                if instrument_key and token:
-                    url = f"https://api.upstox.com/v3/historical-candle/{instrument_key}/days/1/{yesterday_str}/{day_before_str}"
-                    headers = {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'Authorization': f'Bearer {token}'
-                    }
-                    response = requests.get(url, headers=headers, timeout=5)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data.get("status") == "success" and data.get("data"):
-                            candles = data["data"].get("candles", [])
-                            if candles:
-                                candle = candles[0]
-                                # Upstox format: [timestamp, open, high, low, close, volume]
-                                # Extract HIGH (index 2) and LOW (index 3) - NOT OPEN!
-                                high = float(candle[2]) if len(candle) > 2 else spot  # ← HIGH
-                                low = float(candle[3]) if len(candle) > 3 else spot   # ← LOW
-
-                                # Validate and swap if high < low
-                                if high < low:
-                                    high, low = low, high
-
-                                st.session_state[yesterday_key] = {
-                                    "high": high,  # Yesterday's maximum price
-                                    "low": low     # Yesterday's minimum price
-                                }
-                                high, low = high, low
-                            else:
-                                raise ValueError("No candles data")
-                        else:
-                            raise ValueError("API response error")
-                    else:
-                        raise ValueError(f"API error {response.status_code}")
-                else:
-                    raise ValueError("Missing instrument key or token")
-            except Exception as e:
-                # Fallback: use current spot
-                high = spot
-                low = spot
-                st.session_state[yesterday_key] = {"high": high, "low": low}
-        else:
-            hl = st.session_state[yesterday_key]
-            high = hl["high"]
-            low = hl["low"]
+    except Exception as e:
+        # Log error but continue with fallback
+        st.session_state["api_fetch_error"] = f"NSE fetch failed: {str(e)}"
+        high = spot
+        low = spot
 
     # Calculate 26.11% levels
     range_val = high - low
@@ -2619,51 +2473,33 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # DEBUG SECTION - Now API data is available in session_state
     debug_key = f"show_debug_{sym}"
     if st.session_state.get(debug_key, False):
-        with st.expander("🔍 **DEBUG LOG** - 26.11 Levels API Data", expanded=True):
+        with st.expander("🔍 **DEBUG LOG** - 26.11 Levels (NSE Data)", expanded=True):
             # Check for errors first
             api_error = st.session_state.get("api_fetch_error")
-            fetch_status = st.session_state.get("api_fetch_status", "No status")
-
-            st.write(f"**Fetch Status:** {fetch_status}")
 
             if api_error:
-                st.error(f"🔴 **ERROR OCCURRED:** {api_error}")
+                st.error(f"🔴 **ERROR:** {api_error}")
 
-            # Try multiple keys to find the data
-            api_debug = st.session_state.get(f"api_response_{sym}") or \
-                       st.session_state.get("last_api_debug") or \
-                       {}
+            # Get NSE quote data
+            nse_debug = st.session_state.get("api_response_NSE", {})
 
-            if api_debug and api_debug.get("status") == "SUCCESS":
-                st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
-                st.write("**Symbol:**", api_debug.get("symbol", "N/A"))
-                st.write("**OHLC Keys:**", api_debug.get("ohlc_keys", []))
-                st.info(f"🔑 **Extracted HIGH: {api_debug.get('extracted_high', 'N/A')}**")
-                st.info(f"🔑 **Extracted LOW: {api_debug.get('extracted_low', 'N/A')}**")
-                st.write("**Calculated Levels:**")
-                st.write(f"  • Upper (26.11%): {levels_26_11['upper']}")
-                st.write(f"  • Lower (26.11%): {levels_26_11['lower']}")
-                st.write("**Full OHLC Response:**")
-                st.json(api_debug.get("ohlc_data", {}))
+            if nse_debug and nse_debug.get("status") == "SUCCESS":
+                st.success(f"✅ NSE Data captured at: {nse_debug.get('timestamp', 'N/A')}")
+                st.write(f"**Symbol:** {nse_debug.get('symbol', 'N/A')}")
+                st.write(f"**Source:** {nse_debug.get('source', 'N/A')}")
+                st.info(f"📊 **Intraday HIGH: {nse_debug.get('high', 'N/A')}**")
+                st.info(f"📊 **Intraday LOW: {nse_debug.get('low', 'N/A')}**")
+                st.write("**Calculated 26.11% Levels:**")
+                st.write(f"  • Upper: {levels_26_11['upper']} (Market High - 26.11% of range)")
+                st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
+                st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
             else:
-                st.warning("❌ No API data stored - API likely failed")
+                st.warning("❌ No NSE data - using spot price as fallback")
                 st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                 st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
 
-                # Show raw API response if available
-                raw_response = st.session_state.get("api_raw_response")
-                if raw_response:
-                    st.write("**Raw API Response:**")
-                    st.code(raw_response, language="json")
-
-                # Show full API response
-                full_response = st.session_state.get("api_response_full")
-                if full_response:
-                    st.write("**Parsed API Response:**")
-                    st.json(full_response)
-
-                all_keys = [k for k in st.session_state.keys() if "api" in k.lower() or "26_11" in k.lower()]
-                st.write(f"Session keys with 'api' or '26_11': {all_keys}")
+                all_keys = [k for k in st.session_state.keys() if "nse" in k.lower() or "debug" in k.lower()]
+                st.write(f"Session keys: {all_keys}")
 
     st.markdown(
         f"<div class='inst-card'>"
