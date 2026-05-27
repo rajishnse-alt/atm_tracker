@@ -1988,10 +1988,16 @@ def _calculate_26_11_levels(spot, symbol):
                             live_ohlc = quote_data.get("live_ohlc", {})
 
                             if live_ohlc:
+                                # DEBUG: Print what we're getting from API
+                                st.write(f"DEBUG live_ohlc keys: {live_ohlc.keys()}")
+                                st.write(f"DEBUG live_ohlc data: {live_ohlc}")
+
                                 # CRITICAL: Extract HIGH and LOW (NOT OPEN or CLOSE!)
                                 # live_ohlc contains: open, high, low, close, volume, ts
                                 high = float(live_ohlc.get("high", spot))  # ← Day's HIGH
                                 low = float(live_ohlc.get("low", spot))    # ← Day's LOW
+
+                                st.write(f"DEBUG Extracted: high={high}, low={low}")
 
                                 # Validate: high should be >= low
                                 if high < low:
