@@ -2197,7 +2197,7 @@ def _fetch_indices_high_low():
 
         for row in rows:
             cells = row.find_all("td")
-            if not cells or len(cells) < 6:
+            if not cells or len(cells) < 7:
                 continue
 
             index_name = cells[0].get_text(strip=True)
@@ -2205,19 +2205,25 @@ def _fetch_indices_high_low():
             # NIFTY 50
             if "NIFTY 50" in index_name.upper():
                 try:
-                    high = cells[4].get_text(strip=True).replace(",", "")
-                    low = cells[5].get_text(strip=True).replace(",", "")
+                    # Column order: Name(0) | LTP(1) | Chg(2) | %Chg(3) | Open(4) | High(5) | Low(6)
+                    high = cells[5].get_text(strip=True).replace(",", "")
+                    low = cells[6].get_text(strip=True).replace(",", "")
                     indices["NIFTY"] = {"high": float(high), "low": float(low)}
-                except (ValueError, IndexError):
+                    logging.debug(f"NIFTY 50 - High: {high}, Low: {low}")
+                except (ValueError, IndexError) as e:
+                    logging.warning(f"NIFTY 50 parse error: {e}")
                     pass
 
             # NIFTY BANK
             elif "NIFTY BANK" in index_name.upper():
                 try:
-                    high = cells[4].get_text(strip=True).replace(",", "")
-                    low = cells[5].get_text(strip=True).replace(",", "")
+                    # Column order: Name(0) | LTP(1) | Chg(2) | %Chg(3) | Open(4) | High(5) | Low(6)
+                    high = cells[5].get_text(strip=True).replace(",", "")
+                    low = cells[6].get_text(strip=True).replace(",", "")
                     indices["BANKNIFTY"] = {"high": float(high), "low": float(low)}
-                except (ValueError, IndexError):
+                    logging.debug(f"NIFTY BANK - High: {high}, Low: {low}")
+                except (ValueError, IndexError) as e:
+                    logging.warning(f"NIFTY BANK parse error: {e}")
                     pass
 
         return indices
