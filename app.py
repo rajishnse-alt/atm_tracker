@@ -1959,44 +1959,49 @@ def _calculate_26_11_levels(spot, symbol):
                     should_fetch = True
 
         if should_fetch:
-            # Fetch fresh intraday data from API
+            # Fetch real-time intraday OHLC from Market Quote API
             try:
                 instrument_key = INSTRUMENT_KEY.get(symbol)
                 token = st.session_state.get("upstox_token")
 
                 if instrument_key and token:
-                    url = f"https://api.upstox.com/v3/historical-candle/intraday/{instrument_key}/days/1"
+                    # Use Market Quote OHLC V3 endpoint with D interval (daily = entire day's OHLC)
+                    url = "https://api.upstox.com/v3/market-quote/ohlc"
+                    params = {
+                        "instrument_key": instrument_key,
+                        "interval": "D"  # Daily interval gets cumulative high/low for entire day
+                    }
                     headers = {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                         'Authorization': f'Bearer {token}'
                     }
-                    response = requests.get(url, headers=headers, timeout=5)
+                    response = requests.get(url, params=params, headers=headers, timeout=5)
                     if response.status_code == 200:
                         data = response.json()
                         if data.get("status") == "success" and data.get("data"):
-                            candles = data["data"].get("candles", [])
-                            if candles:
-                                # Upstox format: [timestamp, open, high, low, close, volume]
-                                # Extract HIGH (index 2) and LOW (index 3) from each candle
-                                highs = []
-                                lows = []
-                                for candle in candles:
-                                    if len(candle) >= 4:
-                                        # candle[2] = high, candle[3] = low
-                                        h = float(candle[2])
-                                        l = float(candle[3])
-                                        # Validate: high should be >= low
-                                        if h >= l:
-                                            highs.append(h)
-                                            lows.append(l)
-                                        else:
-                                            # Swap if reversed
-                                            highs.append(l)
-                                            lows.append(h)
+                            quote_data = data["data"].get(instrument_key, {})
 
-                                high = max(highs) if highs else spot
-                                low = min(lows) if lows else spot
+                            # Get live OHLC (current forming candle)
+                            live_ohlc = quote_data.get("live_ohlc", {})
+
+                            if live_ohlc:
+                                current_high = float(live_ohlc.get("high", spot))
+                                current_low = float(live_ohlc.get("low", spot))
+
+                                # Get existing tracking data if any
+                                existing_tracking = st.session_state.get(tracking_key, {})
+                                existing_high = existing_tracking.get("high", current_high)
+                                existing_low = existing_tracking.get("low", current_low)
+
+                                # Keep cumulative highest and lowest throughout the day
+                                high = max(existing_high, current_high)
+                                low = min(existing_low, current_low)
+
+                                # Validate: high should be >= low
+                                if high < low:
+                                    high, low = low, high
+
                                 st.session_state[tracking_key] = {
                                     "high": high,
                                     "low": low,
@@ -2004,7 +2009,7 @@ def _calculate_26_11_levels(spot, symbol):
                                     "last_update": now_ist
                                 }
                             else:
-                                raise ValueError("No intraday candles")
+                                raise ValueError("No live OHLC data")
                         else:
                             raise ValueError("API response error")
                     else:
