@@ -2405,40 +2405,49 @@ def _fetch_yesterdays_high_low(symbol):
 
 def _fetch_upstox_data(symbol, access_token):
     """
-    Fetch intraday high/low from Upstox WebSocket (real-time during market hours).
-    Falls back to yesterday's high/low when market is closed.
+    Fetch intraday high/low with SMART PRIORITY:
+    1. PRIMARY: Moneycontrol (live market data - always)
+    2. OVERRIDE: WebSocket real-time ticks (during market hours only)
+    3. FALLBACK: yfinance, Upstox API
     """
-    # Try WebSocket first (during market hours)
-    ws_key = f"ws_started_{symbol}"
-    if ws_key not in st.session_state and access_token:
-        _start_upstox_websocket(symbol, access_token)
-        st.session_state[ws_key] = True
-
-    high, low = _get_session_high_low(symbol)
-
-    # If WebSocket has data, use it (real-time during market hours)
-    if high is not None and low is not None:
-        return {
-            "status": "SUCCESS",
-            "high": high,
-            "low": low,
-            "source": "Upstox WebSocket (real-time)"
-        }
-
-    # Market closed or no ticks yet - use yesterday's high/low
     now_ist = datetime.now(IST)
     is_market_open = now_ist.weekday() < 5 and 9 <= now_ist.hour < 16
 
-    if not is_market_open:
-        # Market is closed, fetch yesterday's data
-        logging.info(f"Market closed, fetching yesterday's high/low for {symbol}")
-        return _fetch_yesterdays_high_low(symbol)
-    else:
-        # Market is open but WebSocket initializing
-        return {
-            "status": "WAITING",
-            "message": "Initializing Upstox WebSocket..."
-        }
+    # ═══════════════════════════════════════════════════════════
+    # 1. TRY MONEYCONTROL FIRST (PRIMARY SOURCE - ALWAYS USE)
+    # ═══════════════════════════════════════════════════════════
+    moneycontrol_result = _fetch_moneycontrol_high_low(symbol)
+    if moneycontrol_result and moneycontrol_result.get("status") == "SUCCESS":
+        mc_high = moneycontrol_result["high"]
+        mc_low = moneycontrol_result["low"]
+
+        # If market is OPEN, check if WebSocket has BETTER (real-time) data
+        if is_market_open and access_token:
+            # Initialize WebSocket if not already running
+            ws_key = f"ws_started_{symbol}"
+            if ws_key not in st.session_state:
+                _start_upstox_websocket(symbol, access_token)
+                st.session_state[ws_key] = True
+
+            # Check if WebSocket has received any ticks
+            ws_high, ws_low = _get_session_high_low(symbol)
+
+            # If WebSocket HAS data, it's more REAL-TIME than Moneycontrol
+            if ws_high is not None and ws_low is not None:
+                return {
+                    "status": "SUCCESS",
+                    "high": ws_high,
+                    "low": ws_low,
+                    "source": "Upstox WebSocket (real-time ticks) 🔴"
+                }
+
+        # Market CLOSED or WebSocket NOT yet active → USE MONEYCONTROL
+        return moneycontrol_result
+
+    # ═══════════════════════════════════════════════════════════
+    # 2. FALLBACK: _fetch_yesterdays_high_low (yfinance/Upstox)
+    # ═══════════════════════════════════════════════════════════
+    return _fetch_yesterdays_high_low(symbol)
 
 def _calculate_26_11_levels(spot, symbol):
     """
