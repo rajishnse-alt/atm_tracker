@@ -1965,38 +1965,29 @@ def _calculate_26_11_levels(spot, symbol):
                 token = st.session_state.get("upstox_token")
 
                 if instrument_key and token:
-                    # Use Market Quote OHLC V3 endpoint with D interval (daily = entire day's OHLC)
+                    # Use Market Quote OHLC V3 endpoint with 1d interval (entire day's cumulative OHLC)
                     url = "https://api.upstox.com/v3/market-quote/ohlc"
                     params = {
                         "instrument_key": instrument_key,
-                        "interval": "D"  # Daily interval gets cumulative high/low for entire day
+                        "interval": "1d"  # Daily interval: live_ohlc contains cumulative day's high/low
                     }
                     headers = {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'Authorization': f'Bearer {token}'
+                        "Accept": "application/json",
+                        "Authorization": f"Bearer {token}"
                     }
                     response = requests.get(url, params=params, headers=headers, timeout=5)
+
                     if response.status_code == 200:
                         data = response.json()
                         if data.get("status") == "success" and data.get("data"):
                             quote_data = data["data"].get(instrument_key, {})
 
-                            # Get live OHLC (current forming candle)
+                            # Get live OHLC for the day (cumulative high/low)
                             live_ohlc = quote_data.get("live_ohlc", {})
 
                             if live_ohlc:
-                                current_high = float(live_ohlc.get("high", spot))
-                                current_low = float(live_ohlc.get("low", spot))
-
-                                # Get existing tracking data if any
-                                existing_tracking = st.session_state.get(tracking_key, {})
-                                existing_high = existing_tracking.get("high", current_high)
-                                existing_low = existing_tracking.get("low", current_low)
-
-                                # Keep cumulative highest and lowest throughout the day
-                                high = max(existing_high, current_high)
-                                low = min(existing_low, current_low)
+                                high = float(live_ohlc.get("high", spot))
+                                low = float(live_ohlc.get("low", spot))
 
                                 # Validate: high should be >= low
                                 if high < low:
