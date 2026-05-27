@@ -1995,13 +1995,19 @@ def _calculate_26_11_levels(spot, symbol):
 
                                 # Store for debug display
                                 debug_info = {
+                                    "symbol": symbol,
                                     "live_ohlc_keys": list(live_ohlc.keys()),
                                     "live_ohlc_data": live_ohlc,
                                     "extracted_high": high,
                                     "extracted_low": low,
-                                    "timestamp": str(datetime.now(IST))
+                                    "timestamp": str(datetime.now(IST)),
+                                    "status": "SUCCESS"
                                 }
-                                st.session_state[f"api_response_{symbol}"] = debug_info
+                                # Use the exact symbol value as key
+                                cache_key = f"api_response_{symbol}"
+                                st.session_state[cache_key] = debug_info
+                                # Also try alternate key
+                                st.session_state["last_api_debug"] = debug_info
 
                                 # Validate: high should be >= low
                                 if high < low:
@@ -2520,17 +2526,23 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     debug_key = f"show_debug_{sym}"
     if st.session_state.get(debug_key, False):
         with st.expander("🔍 **DEBUG LOG** - API Data", expanded=True):
-            api_debug = st.session_state.get(f"api_response_{sym}", {})
-            if api_debug:
+            # Try multiple keys to find the data
+            api_debug = st.session_state.get(f"api_response_{sym}") or \
+                       st.session_state.get("last_api_debug") or \
+                       {}
+
+            if api_debug and api_debug.get("status") == "SUCCESS":
                 st.success(f"✅ API Data captured at: {api_debug.get('timestamp', 'N/A')}")
+                st.write("**Symbol:**", api_debug.get("symbol", "N/A"))
                 st.write("**live_ohlc Keys:**", api_debug.get("live_ohlc_keys", []))
-                st.write("**Extracted HIGH:**", api_debug.get("extracted_high", "N/A"))
-                st.write("**Extracted LOW:**", api_debug.get("extracted_low", "N/A"))
+                st.info(f"🔑 **Extracted HIGH: {api_debug.get('extracted_high', 'N/A')}**")
+                st.info(f"🔑 **Extracted LOW: {api_debug.get('extracted_low', 'N/A')}**")
                 st.write("**Full Response:**")
                 st.json(api_debug.get("live_ohlc_data", {}))
             else:
-                st.warning("❌ No API data stored yet - checking session state...")
-                st.write("Session keys:", [k for k in st.session_state.keys() if "api_response" in k])
+                st.warning("❌ No API data yet - waiting for market quote fetch...")
+                all_keys = [k for k in st.session_state.keys() if "api" in k.lower() or "debug" in k.lower()]
+                st.write(f"Session keys with 'api' or 'debug': {all_keys}")
 
     with st.spinner(""):
         data, chain_err, used_url = fetch_chain(access_token, sym, selected)
