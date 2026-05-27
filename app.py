@@ -2163,7 +2163,7 @@ def _test_websocket_connection(symbol, access_token):
 def _fetch_indices_high_low():
     """
     Scrapes Moneycontrol live markets page for NIFTY 50 and NIFTY BANK
-    high/low using table parsing.
+    high/low using robust table parsing with validation.
     Returns: dict with NIFTY and BANKNIFTY keys
     """
     try:
@@ -2176,60 +2176,62 @@ def _fetch_indices_high_low():
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
-
-        # Find indices table
-        table = None
-        for tbl in soup.find_all("table"):
-            if "NIFTY 50" in tbl.get_text():
-                table = tbl
-                break
-
-        if not table:
-            table = soup.find("table", class_="mctable1")
-
-        if not table:
-            logging.warning("Could not locate indices table on Moneycontrol")
-            return {}
-
-        # Parse rows
-        rows = table.find_all("tr")
         indices = {}
 
-        for row in rows:
+        # Strategy 1: Find by specific text content in the entire page
+        page_text = soup.get_text()
+
+        # Find all table rows in the page
+        all_rows = soup.find_all("tr")
+
+        for row in all_rows:
             cells = row.find_all("td")
             if not cells or len(cells) < 7:
                 continue
 
-            index_name = cells[0].get_text(strip=True)
+            try:
+                # Get all cell texts
+                cell_texts = [cell.get_text(strip=True) for cell in cells]
+                name_cell = cell_texts[0].upper()
+                high_cell = cell_texts[5]
+                low_cell = cell_texts[6]
 
-            # NIFTY 50
-            if "NIFTY 50" in index_name.upper():
-                try:
-                    # Column order: Name(0) | LTP(1) | Chg(2) | %Chg(3) | Open(4) | High(5) | Low(6)
-                    high = cells[5].get_text(strip=True).replace(",", "")
-                    low = cells[6].get_text(strip=True).replace(",", "")
-                    indices["NIFTY"] = {"high": float(high), "low": float(low)}
-                    logging.debug(f"NIFTY 50 - High: {high}, Low: {low}")
-                except (ValueError, IndexError) as e:
-                    logging.warning(f"NIFTY 50 parse error: {e}")
-                    pass
+                # REGEX: Match NIFTY 50 (flexible spacing/formatting)
+                if re.search(r'\bNIFTY\s*50\b', name_cell, re.IGNORECASE):
+                    try:
+                        high_val = float(high_cell.replace(",", ""))
+                        low_val = float(low_cell.replace(",", ""))
 
-            # NIFTY BANK
-            elif "NIFTY BANK" in index_name.upper():
-                try:
-                    # Column order: Name(0) | LTP(1) | Chg(2) | %Chg(3) | Open(4) | High(5) | Low(6)
-                    high = cells[5].get_text(strip=True).replace(",", "")
-                    low = cells[6].get_text(strip=True).replace(",", "")
-                    indices["BANKNIFTY"] = {"high": float(high), "low": float(low)}
-                    logging.debug(f"NIFTY BANK - High: {high}, Low: {low}")
-                except (ValueError, IndexError) as e:
-                    logging.warning(f"NIFTY BANK parse error: {e}")
-                    pass
+                        # Sanity check: NIFTY should be > 20000
+                        if high_val > 20000 and low_val > 20000 and high_val > low_val:
+                            indices["NIFTY"] = {"high": high_val, "low": low_val}
+                            logging.info(f"✓ NIFTY 50 - High: {high_val}, Low: {low_val}")
+                    except ValueError:
+                        pass
+
+                # REGEX: Match NIFTY BANK (flexible spacing/formatting)
+                if re.search(r'\bNIFTY\s+BANK\b', name_cell, re.IGNORECASE):
+                    try:
+                        high_val = float(high_cell.replace(",", ""))
+                        low_val = float(low_cell.replace(",", ""))
+
+                        # Sanity check: NIFTY BANK should be > 40000
+                        if high_val > 40000 and low_val > 40000 and high_val > low_val:
+                            indices["BANKNIFTY"] = {"high": high_val, "low": low_val}
+                            logging.info(f"✓ NIFTY BANK - High: {high_val}, Low: {low_val}")
+                    except ValueError:
+                        pass
+
+            except (IndexError, AttributeError, ValueError) as e:
+                continue
+
+        if not indices:
+            logging.warning("Could not extract indices from Moneycontrol")
 
         return indices
 
     except Exception as e:
-        logging.debug(f"Indices scraping failed: {e}")
+        logging.error(f"Indices scraping failed: {e}")
         return {}
 
 def _get_equity_url(symbol: str):
