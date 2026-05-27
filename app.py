@@ -1938,9 +1938,28 @@ def _calculate_26_11_levels(spot, symbol):
     yesterday_key = f"yesterday_26_11_{symbol}"
 
     if is_market_open:
-        # Market is open - fetch intraday high/low from API
-        if tracking_key not in st.session_state or st.session_state[tracking_key].get("date") != now_ist.date():
-            # Fetch fresh intraday data
+        # Market is open - fetch intraday high/low from API every 3 minutes
+        should_fetch = False
+
+        if tracking_key not in st.session_state:
+            should_fetch = True
+        else:
+            tracking = st.session_state[tracking_key]
+            # Check if date changed
+            if tracking.get("date") != now_ist.date():
+                should_fetch = True
+            else:
+                # Check if 3 minutes have passed since last update
+                last_update = tracking.get("last_update")
+                if last_update:
+                    time_elapsed = (now_ist - last_update).total_seconds() / 60
+                    if time_elapsed >= 3:
+                        should_fetch = True
+                else:
+                    should_fetch = True
+
+        if should_fetch:
+            # Fetch fresh intraday data from API
             try:
                 instrument_key = INSTRUMENT_KEY.get(symbol)
                 token = st.session_state.get("upstox_token")
@@ -1963,7 +1982,12 @@ def _calculate_26_11_levels(spot, symbol):
                                 lows = [float(candle[3]) for candle in candles if len(candle) > 3]
                                 high = max(highs) if highs else spot
                                 low = min(lows) if lows else spot
-                                st.session_state[tracking_key] = {"high": high, "low": low, "date": now_ist.date()}
+                                st.session_state[tracking_key] = {
+                                    "high": high,
+                                    "low": low,
+                                    "date": now_ist.date(),
+                                    "last_update": now_ist
+                                }
                             else:
                                 raise ValueError("No intraday candles")
                         else:
@@ -1974,14 +1998,17 @@ def _calculate_26_11_levels(spot, symbol):
                     raise ValueError("Missing instrument key or token")
             except Exception as e:
                 # Fallback: use previous tracking or spot
-                if tracking_key in st.session_state:
-                    pass  # Keep previous value
-                else:
-                    st.session_state[tracking_key] = {"high": spot, "low": spot, "date": now_ist.date()}
+                if tracking_key not in st.session_state:
+                    st.session_state[tracking_key] = {
+                        "high": spot,
+                        "low": spot,
+                        "date": now_ist.date(),
+                        "last_update": now_ist
+                    }
 
         tracking = st.session_state[tracking_key]
-        high = tracking["high"]
-        low = tracking["low"]
+        high = tracking.get("high", spot)
+        low = tracking.get("low", spot)
     else:
         # Market is closed - fetch yesterday's high/low from Upstox API
         if yesterday_key not in st.session_state:
@@ -2032,6 +2059,12 @@ def _calculate_26_11_levels(spot, symbol):
 
     # Calculate 26.11% levels
     range_val = high - low
+
+    # If range is too small (market just opened or no movement), use ATM as reference
+    if range_val < 1:
+        # Use a default range based on ATM volatility (~1% of spot)
+        range_val = spot * 0.01
+
     level_26_11_lower = low + (range_val * 0.2611)
     level_26_11_upper = high - (range_val * 0.2611)
 
