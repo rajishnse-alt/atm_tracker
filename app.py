@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
-from tvDatafeed import TvDatafeedLive, Interval
+import yfinance as yf
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -1929,35 +1929,30 @@ def parse_entry_prices(text_input):
     return ce_data, pe_data
 
 @st.cache_data(ttl=60)  # Cache for 1 minute (60 seconds) - TvDatafeed updates frequently
-def _fetch_tvdatafeed_data(symbol):
-    """Fetch intraday high/low from TradingView via TvDatafeed. Cached for 1 minute."""
+@st.cache_data(ttl=60)
+def _fetch_yfinance_data(symbol):
+    """Fetch intraday high/low from yfinance. Cached for 60 seconds to prevent rate limiting."""
     try:
-        # Create TvDatafeedLive client (no credentials needed)
-        tvl = TvDatafeedLive()
+        # Fetch 1-minute intraday data for today
+        # yfinance stores data in IST for NSE symbols
+        ticker = yf.Ticker(f"{symbol}.NS")
 
-        # Create Seis (Symbol-Exchange-Interval Set)
-        seis = tvl.new_seis(symbol, "NSE", Interval.in_1_minute)
-
-        if not seis:
-            return {"status": "ERROR", "message": f"Failed to create Seis for {symbol}-NSE"}
-
-        # Get historical data (enough bars to cover the trading day)
-        # n_bars=0 means get all available bars for today
-        data = seis.get_hist(n_bars=0)
+        # Get today's 1-minute bars (yfinance stores last 7 days)
+        data = ticker.history(period="1d", interval="1m")
 
         if data is None or data.empty:
-            return {"status": "ERROR", "message": f"No data for {symbol}"}
+            return {"status": "ERROR", "message": f"No intraday data for {symbol}.NS"}
 
-        # Get the absolute high and low for all bars today
-        high = float(data['high'].max())
-        low = float(data['low'].min())
+        # Get the absolute high and low for all 1-minute bars
+        high = float(data['High'].max())
+        low = float(data['Low'].min())
 
         return {
             "status": "SUCCESS",
             "high": high,
             "low": low,
             "num_candles": len(data),
-            "source": "TvDatafeed 1m intraday (TradingView)"
+            "source": "yfinance 1m intraday"
         }
     except Exception as e:
         return {"status": "ERROR", "message": str(e)}
@@ -1975,8 +1970,8 @@ def _calculate_26_11_levels(spot, symbol):
     high = spot
     low = spot
 
-    # Fetch data from cached TvDatafeed function (1-minute TTL)
-    result = _fetch_tvdatafeed_data(symbol)
+    # Fetch data from cached yfinance function (60-second TTL)
+    result = _fetch_yfinance_data(symbol)
 
     if result["status"] == "SUCCESS":
         high = result["high"]
