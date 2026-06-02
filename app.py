@@ -12,8 +12,6 @@ import threading
 import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from stock_indicators import Quote
-from stock_indicators.indicators import get_sma
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -1945,40 +1943,30 @@ def _get_session_high_low(symbol):
 
 def _fetch_sma_21(symbol):
     """
-    Fetch and calculate SMA 21 (21-period Simple Moving Average) using stock-indicators.
-    Uses historical daily data from yfinance.
+    Fetch and calculate SMA 21 (21-period Simple Moving Average) using yfinance and pandas.
+    Uses historical daily close prices.
     Returns: float or None
     """
     try:
         import yfinance as yf
 
-        # Fetch last 50 days of data (enough for SMA 21 calculation)
+        # Fetch 3 months of historical data
         ticker = yf.Ticker(f"{symbol}.NS")
-        hist = ticker.history(period="3mo")  # 3 months of data
+        hist = ticker.history(period="3mo")
 
         if hist.empty or len(hist) < 21:
             logging.debug(f"Not enough data for SMA 21 for {symbol}")
             return None
 
-        # Convert to stock-indicators Quote format
-        quotes = []
-        for idx, row in hist.iterrows():
-            quote = Quote(
-                date=idx.date(),
-                open=float(row['Open']),
-                high=float(row['High']),
-                low=float(row['Low']),
-                close=float(row['Close']),
-                volume=int(row['Volume'])
-            )
-            quotes.append(quote)
+        # Calculate SMA 21 using pandas rolling mean on Close prices
+        close_prices = hist['Close']
+        sma_21 = close_prices.rolling(window=21).mean()
 
-        # Calculate SMA 21
-        sma_results = get_sma(quotes, 21)
+        # Get the latest SMA value (most recent non-NaN value)
+        latest_sma = sma_21.iloc[-1]
 
-        # Get the latest SMA value
-        if sma_results and sma_results[-1].sma:
-            sma_21_value = float(sma_results[-1].sma)
+        if latest_sma and not (latest_sma != latest_sma):  # Check if not NaN
+            sma_21_value = float(latest_sma)
             logging.debug(f"{symbol} SMA 21: {sma_21_value}")
             return sma_21_value
 
