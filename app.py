@@ -12,6 +12,7 @@ import threading
 import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from stock_indicators import indicators, Quote
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -1941,6 +1942,51 @@ def _get_session_high_low(symbol):
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
+def _fetch_sma_21(symbol):
+    """
+    Fetch and calculate SMA 21 (21-period Simple Moving Average) using stock-indicators.
+    Uses historical daily data from yfinance.
+    Returns: float or None
+    """
+    try:
+        import yfinance as yf
+
+        # Fetch last 50 days of data (enough for SMA 21 calculation)
+        ticker = yf.Ticker(f"{symbol}.NS")
+        hist = ticker.history(period="3mo")  # 3 months of data
+
+        if hist.empty or len(hist) < 21:
+            logging.debug(f"Not enough data for SMA 21 for {symbol}")
+            return None
+
+        # Convert to stock-indicators Quote format
+        quotes = []
+        for idx, row in hist.iterrows():
+            quote = Quote(
+                date=idx.date(),
+                open=float(row['Open']),
+                high=float(row['High']),
+                low=float(row['Low']),
+                close=float(row['Close']),
+                volume=int(row['Volume'])
+            )
+            quotes.append(quote)
+
+        # Calculate SMA 21
+        sma_results = indicators.get_sma(quotes, 21)
+
+        # Get the latest SMA value
+        if sma_results and sma_results[-1].sma:
+            sma_21_value = float(sma_results[-1].sma)
+            logging.debug(f"{symbol} SMA 21: {sma_21_value}")
+            return sma_21_value
+
+        return None
+
+    except Exception as e:
+        logging.debug(f"SMA 21 calculation failed for {symbol}: {e}")
+        return None
+
 def _update_session_high_low(symbol, ltp):
     """Update session high/low with each new tick."""
     state_key = f"session_high_low_{symbol}"
@@ -2999,6 +3045,9 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # Calculate 26.11 reversal levels (this fetches API data and stores in session_state)
     levels_26_11 = _calculate_26_11_levels(result['spot'], sym)
 
+    # Fetch SMA 21 indicator
+    sma_21 = _fetch_sma_21(sym)
+
     # DEBUG SECTION - Now API data is available in session_state
     debug_key = f"show_debug_{sym}"
     if st.session_state.get(debug_key, False):
@@ -3022,6 +3071,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"  • Upper: {levels_26_11['upper']} (Market High - 26.11% of range)")
                 st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
                 st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
+                if sma_21:
+                    st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
             else:
                 # Check if using yesterday's data
                 source = nse_debug.get("source", "")
@@ -3033,10 +3084,14 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write(f"**Calculated 26.11% Levels:**")
                     st.write(f"  • Upper: {levels_26_11['upper']}")
                     st.write(f"  • Lower: {levels_26_11['lower']}")
+                    if sma_21:
+                        st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
                 else:
                     st.warning("⏳ Waiting for WebSocket data from Upstox...")
                     st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                     st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
+                    if sma_21:
+                        st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
 
                 # Show WebSocket status
                 st.markdown("### 📡 WebSocket Diagnostic")
@@ -3072,6 +3127,9 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write("WebSocket is connecting to Upstox and subscribing to live feed.")
                     st.write("This can take 5-10 seconds on first load.")
 
+    # Format SMA 21 display
+    sma_21_display = f"SMA 21: ₹{sma_21:,.2f}" if sma_21 else "SMA 21: Calculating..."
+
     st.markdown(
         f"<div class='inst-card'>"
         f"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>"
@@ -3084,6 +3142,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"      (26.11% High) · {levels_26_11['upper']} <span style='color:#999;font-size:8px;'>(H:{levels_26_11['high']} L:{levels_26_11['low']})</span>"
         f"      <br/>"
         f"      (26.11% Low) · {levels_26_11['lower']} <span style='color:#999;font-size:8px;'>(H:{levels_26_11['high']} L:{levels_26_11['low']})</span>"
+        f"      <br/>"
+        f"      <span style='color:#4caf50;'>{sma_21_display}</span>"
         f"    </div>"
         f"  </div></div>"
         f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, days_to_expiry)}"
