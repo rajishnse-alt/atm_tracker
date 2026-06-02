@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from scipy.stats import norm
 from scipy.optimize import brentq
@@ -13,7 +13,114 @@ import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
+import os
+import csv
+from pathlib import Path
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
+
+# ─────────────────────────────────────────────
+# TICK DATA LOGGING SETUP
+# ─────────────────────────────────────────────
+DATA_DIR = Path(__file__).parent / "data" / "ticks"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def _get_tick_data_file(symbol):
+    """Get the file path for tick data (single file per symbol)."""
+    return DATA_DIR / f"{symbol}.csv"
+
+def _purge_old_tick_data(symbol, days=30):
+    """Remove rows older than N days from the tick data CSV."""
+    try:
+        file_path = _get_tick_data_file(symbol)
+
+        if not file_path.exists():
+            return
+
+        cutoff_datetime = datetime.now(IST) - timedelta(days=days)
+
+        # Read all rows
+        rows_kept = []
+        rows_deleted = 0
+
+        with open(file_path, 'r') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+
+            for row in reader:
+                try:
+                    row_datetime = datetime.fromisoformat(row['timestamp'])
+                    if row_datetime > cutoff_datetime:
+                        rows_kept.append(row)
+                    else:
+                        rows_deleted += 1
+                except (ValueError, KeyError):
+                    rows_kept.append(row)  # Keep rows with invalid timestamps
+
+        # Write back only recent rows
+        with open(file_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows_kept)
+
+        if rows_deleted > 0:
+            logging.info(f"🗑️ Purged {rows_deleted} old rows from {symbol}.csv (kept {len(rows_kept)} rows)")
+
+    except Exception as e:
+        logging.error(f"Error purging old tick data for {symbol}: {e}")
+
+def _log_tick(symbol, ltp, timestamp_ist):
+    """Log individual tick to CSV file."""
+    try:
+        file_path = _get_tick_data_file(symbol)
+        file_exists = file_path.exists()
+
+        with open(file_path, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'type'])
+
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow({
+                'timestamp': timestamp_ist.isoformat(),
+                'open': f"{ltp:.2f}",
+                'high': f"{ltp:.2f}",
+                'low': f"{ltp:.2f}",
+                'close': f"{ltp:.2f}",
+                'volume': 1,
+                'type': 'tick'
+            })
+
+    except Exception as e:
+        logging.error(f"Error logging tick for {symbol}: {e}")
+
+def _log_3min_candle(symbol, candle):
+    """Write a 3-minute candle to the tick data file."""
+    try:
+        file_path = _get_tick_data_file(symbol)
+
+        # Check if file exists to determine if we need headers
+        file_exists = file_path.exists()
+
+        with open(file_path, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'type'])
+
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow({
+                'timestamp': candle['timestamp'].isoformat(),
+                'open': f"{candle['open']:.2f}",
+                'high': f"{candle['high']:.2f}",
+                'low': f"{candle['low']:.2f}",
+                'close': f"{candle['close']:.2f}",
+                'volume': candle['volume'],
+                'type': '3m'
+            })
+
+        logging.debug(f"📝 Logged 3m candle for {symbol}: {candle['timestamp']} C={candle['close']:.2f}")
+
+    except Exception as e:
+        logging.error(f"Error logging candle data for {symbol}: {e}")
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -2159,6 +2266,19 @@ def _fetch_sma_21(symbol):
     result = _fetch_sma_indicators(symbol)
     return result.get('sma_21') if result else None
 
+def _get_3min_candle_key(timestamp_ist):
+    """Get 3-minute candle key based on IST timestamp."""
+    # Round down to nearest 3-minute boundary
+    minute = (timestamp_ist.minute // 3) * 3
+    hour = timestamp_ist.hour
+
+    # Handle minute=60 case (e.g., 9:60 -> 10:00)
+    if minute == 60:
+        minute = 0
+        hour += 1
+
+    return f"{hour:02d}:{minute:02d}"
+
 def _get_15min_candle_key(timestamp_ist):
     """Get 15-minute candle key based on IST timestamp."""
     # Round down to nearest 15-minute boundary
@@ -2171,6 +2291,44 @@ def _get_15min_candle_key(timestamp_ist):
         hour += 1
 
     return f"{hour:02d}:{minute:02d}"
+
+def _update_3min_candles(symbol, ltp, timestamp_ist):
+    """Update 3-minute OHLC candles with new tick and log completed candles."""
+    candles_key = f"candles_3m_{symbol}"
+
+    if candles_key not in st.session_state:
+        st.session_state[candles_key] = {}
+
+    candle_time = _get_3min_candle_key(timestamp_ist)
+    candles = st.session_state[candles_key]
+
+    if candle_time not in candles:
+        # New 3-minute candle
+        candles[candle_time] = {
+            "open": ltp,
+            "high": ltp,
+            "low": ltp,
+            "close": ltp,
+            "volume": 1,
+            "timestamp": timestamp_ist
+        }
+    else:
+        # Update existing candle
+        candle = candles[candle_time]
+        candle["high"] = max(candle["high"], ltp)
+        candle["low"] = min(candle["low"], ltp)
+        candle["close"] = ltp
+        candle["volume"] += 1
+
+    # Log completed 3-minute candles periodically
+    # Check if any candle is > 3 minutes old (meaning a new 3m candle has started)
+    sorted_times = sorted(candles.keys())
+    if len(sorted_times) > 1:
+        # Log all but the latest candle (which is still being built)
+        for old_candle_time in sorted_times[:-1]:
+            candle = candles[old_candle_time]
+            _log_3min_candle(symbol, candle)
+            del candles[old_candle_time]
 
 def _update_15min_candles(symbol, ltp, timestamp_ist):
     """Update 15-minute OHLC candles with new tick."""
@@ -2212,9 +2370,11 @@ def _update_session_high_low(symbol, ltp):
             data["low"] = ltp
         data["ticks"] = data.get("ticks", 0) + 1
 
-    # Also update 15-minute candles
+    # Log individual tick and update candles
     timestamp_ist = datetime.now(IST)
-    _update_15min_candles(symbol, ltp, timestamp_ist)
+    _log_tick(symbol, ltp, timestamp_ist)  # Log individual tick with OHLC
+    _update_3min_candles(symbol, ltp, timestamp_ist)  # Build 3m candles
+    _update_15min_candles(symbol, ltp, timestamp_ist)  # Build 15m candles
 
 def _start_upstox_websocket(symbol, access_token):
     """
@@ -2239,6 +2399,10 @@ def _start_upstox_websocket(symbol, access_token):
         try:
             data = json.loads(message)
 
+            # Track all messages (for debugging)
+            tick_count_key = f"ws_tick_count_{symbol}"
+            st.session_state[tick_count_key] = st.session_state.get(tick_count_key, 0) + 1
+
             # Upstox sends tick data with 'ltp' field
             if isinstance(data, dict):
                 ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
@@ -2247,16 +2411,21 @@ def _start_upstox_websocket(symbol, access_token):
                     try:
                         ltp = float(ltp)
                         _update_session_high_low(symbol, ltp)
-                        logging.debug(f"[{symbol}] Tick: {ltp} | H: {st.session_state.get(f'session_high_low_{symbol}', {}).get('high')} | L: {st.session_state.get(f'session_high_low_{symbol}', {}).get('low')}")
+
+                        # Log price ticks (not all messages)
+                        price_tick_key = f"ws_price_tick_count_{symbol}"
+                        st.session_state[price_tick_key] = st.session_state.get(price_tick_key, 0) + 1
+
+                        logging.info(f"✅ [{symbol}] Tick #{st.session_state[price_tick_key]}: {ltp} | H: {st.session_state.get(f'session_high_low_{symbol}', {}).get('high')} | L: {st.session_state.get(f'session_high_low_{symbol}', {}).get('low')}")
                     except (ValueError, TypeError) as e:
-                        logging.warning(f"LTP parse error for {symbol}: {e}")
+                        logging.warning(f"❌ LTP parse error for {symbol}: {e}")
                 else:
                     logging.debug(f"[{symbol}] Non-price message: {list(data.keys())}")
 
         except json.JSONDecodeError as e:
-            logging.warning(f"JSON decode error for {symbol}: {e}")
+            logging.warning(f"❌ JSON decode error for {symbol}: {e}")
         except Exception as e:
-            logging.error(f"WebSocket message error for {symbol}: {e}")
+            logging.error(f"❌ WebSocket message error for {symbol}: {e}")
 
     def on_error(ws, error):
         logging.error(f"WebSocket error for {symbol}: {error}")
@@ -2690,6 +2859,13 @@ def _fetch_upstox_data(symbol, access_token):
     if moneycontrol_result and moneycontrol_result.get("status") == "SUCCESS":
         mc_high = moneycontrol_result["high"]
         mc_low = moneycontrol_result["low"]
+
+        # Purge old tick data (older than 30 days) once per day
+        purge_key = f"purged_ticks_{symbol}"
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        if st.session_state.get(purge_key) != today:
+            _purge_old_tick_data(symbol, days=30)
+            st.session_state[purge_key] = today
 
         # If market is OPEN, check if WebSocket has BETTER (real-time) data
         if is_market_open and access_token:
@@ -3275,6 +3451,74 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # DEBUG SECTION - Now API data is available in session_state
     debug_key = f"show_debug_{sym}"
     if st.session_state.get(debug_key, False):
+        with st.expander("🔍 **DEBUG LOG** - SMAs & WebSocket Candles", expanded=True):
+            # Show 15-minute candle building status
+            candles_key = f"candles_15m_{sym}"
+            candles = st.session_state.get(candles_key, {})
+            candles_count = len(candles)
+
+            # Show 3-minute tick data logging status
+            st.write("### 💾 3-Minute Tick Data Logging")
+            tick_file = _get_tick_data_file(sym)
+
+            if tick_file.exists():
+                # Count rows and categorize by type
+                with open(tick_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+
+                total_rows = len(rows)
+                tick_count = sum(1 for r in rows if r.get('type') == 'tick')
+                candle_count = sum(1 for r in rows if r.get('type') == '3m')
+
+                st.write(f"**File:** `data/ticks/{sym}.csv`")
+                st.write(f"**Total records:** {total_rows}")
+                st.write(f"  • Individual ticks: {tick_count}")
+                st.write(f"  • 3-minute candles: {candle_count}")
+                st.write(f"**Retention:** 30-day rolling window")
+
+                # Get date range
+                if rows:
+                    first_date = rows[0]['timestamp'][:10]
+                    last_date = rows[-1]['timestamp'][:10]
+                    st.write(f"**Date range:** {first_date} to {last_date}")
+
+                st.success("✅ Individual ticks + 3m candles logging active")
+            else:
+                st.write(f"**File:** `data/ticks/{sym}.csv`")
+                st.info("📝 Waiting for first tick data (collection starts at 9:15 AM)")
+
+            # Show WebSocket tick status
+            st.write("### 📡 WebSocket Tick Status")
+            all_ticks = st.session_state.get(f"ws_tick_count_{sym}", 0)
+            price_ticks = st.session_state.get(f"ws_price_tick_count_{sym}", 0)
+            st.write(f"**Total messages received:** {all_ticks}")
+            st.write(f"**Price ticks processed:** {price_ticks}")
+
+            if price_ticks > 0:
+                st.success(f"✅ WebSocket is receiving data! {price_ticks} price updates")
+            else:
+                st.warning("⏳ Waiting for WebSocket ticks to arrive (market may be closed)")
+
+            st.write("### 📊 15-Minute Candles Status")
+            st.write(f"**Total 15m candles collected:** {candles_count}/200")
+
+            if candles_count > 0:
+                st.write(f"**Recent candles (last 10):**")
+                sorted_times = sorted(candles.keys())[-10:]
+                for candle_time in sorted_times:
+                    c = candles[candle_time]
+                    st.write(f"  • {candle_time}: O={c['open']:.2f} H={c['high']:.2f} L={c['low']:.2f} C={c['close']:.2f} V={c['volume']}")
+
+            # Show SMA calculation source
+            if sma_indicators:
+                source = sma_indicators.get('source', 'Unknown')
+                st.write(f"**SMA Source:** {source}")
+                if source == "WebSocket 15m":
+                    st.success(f"✅ Using real-time 15m candles ({candles_count} candles)")
+                else:
+                    st.info(f"📅 Using daily data (15m candles: {candles_count}/200)")
+
         with st.expander("🔍 **DEBUG LOG** - 26.11 Levels (NSE Data)", expanded=True):
             # Check for errors first
             api_error = st.session_state.get("api_fetch_error")
