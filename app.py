@@ -12,7 +12,8 @@ import threading
 import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from stock_indicators import indicators, Quote
+from stock_indicators import Quote
+from stock_indicators.indicators import get_sma
 import logging
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
@@ -1973,7 +1974,7 @@ def _fetch_sma_21(symbol):
             quotes.append(quote)
 
         # Calculate SMA 21
-        sma_results = indicators.get_sma(quotes, 21)
+        sma_results = get_sma(quotes, 21)
 
         # Get the latest SMA value
         if sma_results and sma_results[-1].sma:
