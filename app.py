@@ -1941,6 +1941,7 @@ def _get_session_high_low(symbol):
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes to avoid repeated API calls
 def _fetch_sma_21(symbol):
     """
     Fetch and calculate SMA 21 (21-period Simple Moving Average) using yfinance and pandas.
@@ -1949,13 +1950,31 @@ def _fetch_sma_21(symbol):
     """
     try:
         import yfinance as yf
+        import pandas as pd
+
+        # Map symbols to yfinance ticker symbols
+        # Indices use special format, stocks use .NS suffix
+        ticker_map = {
+            "NIFTY": "^NSEI",      # Nifty 50 Index
+            "BANKNIFTY": "^NSEBANK",  # Nifty Bank Index
+            "HDFCBANK": "HDFCBANK.NS",
+            "ICICIBANK": "ICICIBANK.NS",
+            "SBIN": "SBIN.NS",
+            "RELIANCE": "RELIANCE.NS",
+        }
+
+        ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
 
         # Fetch 3 months of historical data
-        ticker = yf.Ticker(f"{symbol}.NS")
+        ticker = yf.Ticker(ticker_symbol)
         hist = ticker.history(period="3mo")
 
-        if hist.empty or len(hist) < 21:
-            logging.debug(f"Not enough data for SMA 21 for {symbol}")
+        if hist.empty:
+            logging.warning(f"No historical data for SMA 21 for {symbol}")
+            return None
+
+        if len(hist) < 21:
+            logging.warning(f"Insufficient data for SMA 21 for {symbol}: {len(hist)} bars (need 21)")
             return None
 
         # Calculate SMA 21 using pandas rolling mean on Close prices
@@ -1965,15 +1984,17 @@ def _fetch_sma_21(symbol):
         # Get the latest SMA value (most recent non-NaN value)
         latest_sma = sma_21.iloc[-1]
 
-        if latest_sma and not (latest_sma != latest_sma):  # Check if not NaN
+        # Check if valid (not NaN)
+        if pd.notna(latest_sma):
             sma_21_value = float(latest_sma)
             logging.debug(f"{symbol} SMA 21: {sma_21_value}")
             return sma_21_value
-
-        return None
+        else:
+            logging.warning(f"SMA 21 calculation resulted in NaN for {symbol}")
+            return None
 
     except Exception as e:
-        logging.debug(f"SMA 21 calculation failed for {symbol}: {e}")
+        logging.error(f"SMA 21 calculation failed for {symbol}: {e}", exc_info=True)
         return None
 
 def _update_session_high_low(symbol, ltp):
