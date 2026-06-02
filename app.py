@@ -1941,11 +1941,11 @@ def _get_session_high_low(symbol):
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes to avoid repeated API calls
+@st.cache_data(ttl=60)  # Cache for 1 minute (intraday data updates frequently)
 def _fetch_sma_indicators(symbol):
     """
-    Fetch and calculate SMA 9, SMA 21, and SMA 200 using yfinance and pandas.
-    Uses historical daily close prices.
+    Fetch and calculate SMA 9, SMA 21, and SMA 200 using 15-minute bars from yfinance.
+    Uses intraday 15-minute close prices.
     Returns: dict with keys 'sma_9', 'sma_21', 'sma_200' or None if calculation fails
     """
     try:
@@ -1965,16 +1965,17 @@ def _fetch_sma_indicators(symbol):
 
         ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
 
-        # Fetch 1 year of historical data (needed for SMA 200)
+        # Fetch 15-minute bars for intraday trading
+        # Need ~3 days for SMA 200 (200 bars * 15min = 3000min = ~50 hours of trading)
         ticker = yf.Ticker(ticker_symbol)
-        hist = ticker.history(period="1y")
+        hist = ticker.history(period="5d", interval="15m")
 
         if hist.empty:
-            logging.warning(f"No historical data for SMAs for {symbol}")
+            logging.warning(f"No 15-minute data for SMAs for {symbol}")
             return None
 
         if len(hist) < 200:
-            logging.warning(f"Insufficient data for SMA 200 for {symbol}: {len(hist)} bars (need 200)")
+            logging.warning(f"Insufficient 15m data for SMA 200 for {symbol}: {len(hist)} bars (need 200)")
             return None
 
         # Calculate SMAs using pandas rolling mean on Close prices
@@ -1995,7 +1996,7 @@ def _fetch_sma_indicators(symbol):
                 'sma_21': float(latest_sma_21),
                 'sma_200': float(latest_sma_200)
             }
-            logging.debug(f"{symbol} SMAs - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
+            logging.debug(f"{symbol} SMAs (15m) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
             return result
         else:
             logging.warning(f"SMA calculation resulted in NaN for {symbol}")
@@ -3098,13 +3099,13 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
                 st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
                 if sma_indicators:
-                    st.write(f"**SMA Indicators (Ascending):**")
+                    st.write(f"**SMA Indicators (15-minute bars) - Ascending:**")
                     smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
                     smas_sorted = sorted(smas)
                     st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
-                    st.write(f"  • SMA 9: ₹{sma_indicators['sma_9']:,.2f}")
-                    st.write(f"  • SMA 21: ₹{sma_indicators['sma_21']:,.2f}")
-                    st.write(f"  • SMA 200: ₹{sma_indicators['sma_200']:,.2f}")
+                    st.write(f"  • SMA 9 (15m): ₹{sma_indicators['sma_9']:,.2f}")
+                    st.write(f"  • SMA 21 (15m): ₹{sma_indicators['sma_21']:,.2f}")
+                    st.write(f"  • SMA 200 (15m): ₹{sma_indicators['sma_200']:,.2f}")
             else:
                 # Check if using yesterday's data
                 source = nse_debug.get("source", "")
@@ -3117,7 +3118,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write(f"  • Upper: {levels_26_11['upper']}")
                     st.write(f"  • Lower: {levels_26_11['lower']}")
                     if sma_indicators:
-                        st.write(f"**SMA Indicators (Ascending):**")
+                        st.write(f"**SMA Indicators (15-minute bars) - Ascending:**")
                         smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
                         smas_sorted = sorted(smas)
                         st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
@@ -3126,7 +3127,7 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                     st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
                     if sma_indicators:
-                        st.write(f"**SMA Indicators (Ascending):**")
+                        st.write(f"**SMA Indicators (15-minute bars) - Ascending:**")
                         smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
                         smas_sorted = sorted(smas)
                         st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
@@ -3169,10 +3170,10 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     if sma_indicators:
         smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
         smas_sorted = sorted(smas)
-        sma_display = f"SMAs: ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
+        sma_display = f"SMAs (15m): ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
         sma_detail = f"<small>(9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f})</small>"
     else:
-        sma_display = "SMAs: Calculating..."
+        sma_display = "SMAs (15m): Calculating..."
         sma_detail = ""
 
     st.markdown(
