@@ -1941,9 +1941,63 @@ def _get_session_high_low(symbol):
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
+def _seed_15min_candles_from_yfinance(symbol):
+    """
+    Seed 15-minute candles from yfinance if WebSocket hasn't provided enough data yet.
+    This allows SMAs to work even before accumulating 200 WebSocket candles.
+    """
+    try:
+        import yfinance as yf
+        import pandas as pd
+
+        ticker_map = {
+            "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK",
+            "HDFCBANK": "HDFCBANK.NS",
+            "ICICIBANK": "ICICIBANK.NS",
+            "SBIN": "SBIN.NS",
+            "RELIANCE": "RELIANCE.NS",
+        }
+
+        ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
+        ticker = yf.Ticker(ticker_symbol)
+
+        # Fetch 1-hour bars (closest to 15m without WebSocket)
+        hist = ticker.history(period="30d", interval="1h")
+
+        if hist.empty or len(hist) < 200:
+            return None
+
+        # Convert to session_state candles format
+        candles_key = f"candles_15m_{symbol}"
+        if candles_key not in st.session_state:
+            st.session_state[candles_key] = {}
+
+        candles = st.session_state[candles_key]
+
+        # Add historical 1h bars (will be overwritten by WebSocket 15m as they arrive)
+        for idx, row in hist.iterrows():
+            candle_time = idx.strftime("%H:%M")
+            if candle_time not in candles:  # Don't overwrite WebSocket data
+                candles[candle_time] = {
+                    "open": float(row['Open']),
+                    "high": float(row['High']),
+                    "low": float(row['Low']),
+                    "close": float(row['Close']),
+                    "volume": int(row['Volume'])
+                }
+
+        logging.info(f"✅ Seeded {len(hist)} hourly candles for {symbol} from yfinance")
+        return True
+
+    except Exception as e:
+        logging.debug(f"Could not seed candles from yfinance: {e}")
+        return None
+
 def _get_sma_from_websocket_candles(symbol):
     """
     Calculate SMA 9, 21, 200 from 15-minute candles built from WebSocket ticks.
+    Falls back to hourly data from yfinance if WebSocket data insufficient.
     Returns: dict with keys 'sma_9', 'sma_21', 'sma_200' or None if insufficient data
     """
     try:
@@ -1952,9 +2006,15 @@ def _get_sma_from_websocket_candles(symbol):
         candles_key = f"candles_15m_{symbol}"
         candles = st.session_state.get(candles_key, {})
 
+        # If insufficient WebSocket candles, try seeding from yfinance
         if not candles or len(candles) < 200:
-            logging.warning(f"Insufficient 15m candles for {symbol}: {len(candles)} (need 200)")
-            return None
+            if len(candles) < 200:
+                _seed_15min_candles_from_yfinance(symbol)
+                candles = st.session_state.get(candles_key, {})
+
+            if not candles or len(candles) < 200:
+                logging.warning(f"Insufficient candles for {symbol}: {len(candles)} (need 200)")
+                return None
 
         # Convert candles dict to DataFrame
         # Sort by time to ensure chronological order
@@ -3298,11 +3358,18 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     else:
         # Show progress building 15-minute candles from WebSocket
         candles_count = len(st.session_state.get(f"candles_15m_{sym}", {}))
+        ws_data = st.session_state.get(f"session_high_low_{sym}")
+
         if candles_count > 0:
             progress = int((candles_count / 200) * 100)
-            sma_display = f"SMAs (15m): Building... {candles_count}/200 candles ({progress}%)"
+            if ws_data:
+                # WebSocket is providing ticks
+                sma_display = f"SMAs (15m WebSocket): Building... {candles_count}/200 candles ({progress}%)"
+            else:
+                # Using yfinance fallback
+                sma_display = f"SMAs (1h fallback): Building... {candles_count}/200 candles ({progress}%)"
         else:
-            sma_display = "SMAs (15m): Waiting for WebSocket data..."
+            sma_display = "SMAs (15m): Waiting for data..."
         sma_detail = ""
 
     st.markdown(
