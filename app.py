@@ -1997,29 +1997,42 @@ def _seed_15min_candles_from_yfinance(symbol):
 def _get_sma_from_websocket_candles(symbol):
     """
     Calculate SMA 9, 21, 200 from 15-minute candles built from WebSocket ticks.
-    Falls back to hourly data from yfinance if WebSocket data insufficient.
+    Falls back to daily/hourly yfinance data while WebSocket accumulates.
     Returns: dict with keys 'sma_9', 'sma_21', 'sma_200' or None if insufficient data
     """
     try:
         import pandas as pd
+        import yfinance as yf
 
         candles_key = f"candles_15m_{symbol}"
         candles = st.session_state.get(candles_key, {})
+        candles_count = len(candles)
 
-        # If insufficient WebSocket candles, try seeding from yfinance
-        if not candles or len(candles) < 200:
-            if len(candles) < 200:
-                _seed_15min_candles_from_yfinance(symbol)
-                candles = st.session_state.get(candles_key, {})
+        # If we have 200+ WebSocket candles, use those (true 15m data)
+        if candles_count >= 200:
+            sorted_times = sorted(candles.keys())
+            close_prices = [candles[t]["close"] for t in sorted_times]
+            source = "WebSocket 15m"
+        else:
+            # Fall back to daily data from yfinance (reliable, always available)
+            ticker_map = {
+                "NIFTY": "^NSEI",
+                "BANKNIFTY": "^NSEBANK",
+                "HDFCBANK": "HDFCBANK.NS",
+                "ICICIBANK": "ICICIBANK.NS",
+                "SBIN": "SBIN.NS",
+                "RELIANCE": "RELIANCE.NS",
+            }
+            ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
+            ticker = yf.Ticker(ticker_symbol)
+            hist = ticker.history(period="1y")
 
-            if not candles or len(candles) < 200:
-                logging.warning(f"Insufficient candles for {symbol}: {len(candles)} (need 200)")
+            if hist.empty or len(hist) < 200:
+                logging.warning(f"Insufficient data for {symbol}: {len(hist)} bars")
                 return None
 
-        # Convert candles dict to DataFrame
-        # Sort by time to ensure chronological order
-        sorted_times = sorted(candles.keys())
-        close_prices = [candles[t]["close"] for t in sorted_times]
+            close_prices = hist['Close'].tolist()
+            source = "Daily"
 
         # Calculate SMAs using pandas rolling mean
         close_series = pd.Series(close_prices)
@@ -2038,16 +2051,17 @@ def _get_sma_from_websocket_candles(symbol):
                 'sma_9': float(latest_sma_9),
                 'sma_21': float(latest_sma_21),
                 'sma_200': float(latest_sma_200),
-                'candles_count': len(candles)
+                'source': source,
+                'candles_count': candles_count
             }
-            logging.debug(f"✅ {symbol} SMAs (15m WebSocket) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f} ({len(candles)} candles)")
+            logging.info(f"✅ {symbol} SMAs ({source}) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
             return result
         else:
             logging.warning(f"NaN in SMA calculation for {symbol}")
             return None
 
     except Exception as e:
-        logging.error(f"SMA calculation from WebSocket candles failed for {symbol}: {e}", exc_info=True)
+        logging.error(f"SMA calculation failed for {symbol}: {e}", exc_info=True)
         return None
 
 @st.cache_data(ttl=60)  # Cache for 1 minute (intraday data updates frequently)
@@ -3353,23 +3367,24 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     if sma_indicators:
         smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
         smas_sorted = sorted(smas)
-        sma_display = f"SMAs (15m): ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
-        sma_detail = f"<small>(9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f})</small>"
+        source = sma_indicators.get('source', 'Unknown')
+        candles_count = sma_indicators.get('candles_count', 0)
+
+        if source == "WebSocket 15m":
+            sma_display = f"SMAs (15m WebSocket): ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
+            sma_detail = f"<small>WS {candles_count} candles | 9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f}</small>"
+        else:
+            sma_display = f"SMAs (Daily): ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
+            sma_detail = f"<small>Daily data | 9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f}</small>"
     else:
         # Show progress building 15-minute candles from WebSocket
         candles_count = len(st.session_state.get(f"candles_15m_{sym}", {}))
-        ws_data = st.session_state.get(f"session_high_low_{sym}")
 
         if candles_count > 0:
             progress = int((candles_count / 200) * 100)
-            if ws_data:
-                # WebSocket is providing ticks
-                sma_display = f"SMAs (15m WebSocket): Building... {candles_count}/200 candles ({progress}%)"
-            else:
-                # Using yfinance fallback
-                sma_display = f"SMAs (1h fallback): Building... {candles_count}/200 candles ({progress}%)"
+            sma_display = f"SMAs (15m Building): {candles_count}/200 candles ({progress}%)"
         else:
-            sma_display = "SMAs (15m): Waiting for data..."
+            sma_display = "SMAs: Loading..."
         sma_detail = ""
 
     st.markdown(
