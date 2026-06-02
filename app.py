@@ -1942,11 +1942,11 @@ def _get_session_high_low(symbol):
     return data.get("high"), data.get("low")
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes to avoid repeated API calls
-def _fetch_sma_21(symbol):
+def _fetch_sma_indicators(symbol):
     """
-    Fetch and calculate SMA 21 (21-period Simple Moving Average) using yfinance and pandas.
+    Fetch and calculate SMA 9, SMA 21, and SMA 200 using yfinance and pandas.
     Uses historical daily close prices.
-    Returns: float or None
+    Returns: dict with keys 'sma_9', 'sma_21', 'sma_200' or None if calculation fails
     """
     try:
         import yfinance as yf
@@ -1965,37 +1965,53 @@ def _fetch_sma_21(symbol):
 
         ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
 
-        # Fetch 3 months of historical data
+        # Fetch 1 year of historical data (needed for SMA 200)
         ticker = yf.Ticker(ticker_symbol)
-        hist = ticker.history(period="3mo")
+        hist = ticker.history(period="1y")
 
         if hist.empty:
-            logging.warning(f"No historical data for SMA 21 for {symbol}")
+            logging.warning(f"No historical data for SMAs for {symbol}")
             return None
 
-        if len(hist) < 21:
-            logging.warning(f"Insufficient data for SMA 21 for {symbol}: {len(hist)} bars (need 21)")
+        if len(hist) < 200:
+            logging.warning(f"Insufficient data for SMA 200 for {symbol}: {len(hist)} bars (need 200)")
             return None
 
-        # Calculate SMA 21 using pandas rolling mean on Close prices
+        # Calculate SMAs using pandas rolling mean on Close prices
         close_prices = hist['Close']
+        sma_9 = close_prices.rolling(window=9).mean()
         sma_21 = close_prices.rolling(window=21).mean()
+        sma_200 = close_prices.rolling(window=200).mean()
 
-        # Get the latest SMA value (most recent non-NaN value)
-        latest_sma = sma_21.iloc[-1]
+        # Get the latest values
+        latest_sma_9 = sma_9.iloc[-1]
+        latest_sma_21 = sma_21.iloc[-1]
+        latest_sma_200 = sma_200.iloc[-1]
 
-        # Check if valid (not NaN)
-        if pd.notna(latest_sma):
-            sma_21_value = float(latest_sma)
-            logging.debug(f"{symbol} SMA 21: {sma_21_value}")
-            return sma_21_value
+        # Check if all values are valid (not NaN)
+        if pd.notna(latest_sma_9) and pd.notna(latest_sma_21) and pd.notna(latest_sma_200):
+            result = {
+                'sma_9': float(latest_sma_9),
+                'sma_21': float(latest_sma_21),
+                'sma_200': float(latest_sma_200)
+            }
+            logging.debug(f"{symbol} SMAs - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
+            return result
         else:
-            logging.warning(f"SMA 21 calculation resulted in NaN for {symbol}")
+            logging.warning(f"SMA calculation resulted in NaN for {symbol}")
             return None
 
     except Exception as e:
-        logging.error(f"SMA 21 calculation failed for {symbol}: {e}", exc_info=True)
+        logging.error(f"SMA calculation failed for {symbol}: {e}", exc_info=True)
         return None
+
+def _fetch_sma_21(symbol):
+    """
+    Backward compatibility wrapper for single SMA 21 fetch.
+    Returns: float or None
+    """
+    result = _fetch_sma_indicators(symbol)
+    return result.get('sma_21') if result else None
 
 def _update_session_high_low(symbol, ltp):
     """Update session high/low with each new tick."""
@@ -3055,8 +3071,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # Calculate 26.11 reversal levels (this fetches API data and stores in session_state)
     levels_26_11 = _calculate_26_11_levels(result['spot'], sym)
 
-    # Fetch SMA 21 indicator
-    sma_21 = _fetch_sma_21(sym)
+    # Fetch SMA indicators (9, 21, 200)
+    sma_indicators = _fetch_sma_indicators(sym)
 
     # DEBUG SECTION - Now API data is available in session_state
     debug_key = f"show_debug_{sym}"
@@ -3081,8 +3097,14 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"  • Upper: {levels_26_11['upper']} (Market High - 26.11% of range)")
                 st.write(f"  • Lower: {levels_26_11['lower']} (Market Low + 26.11% of range)")
                 st.write(f"**Range:** {nse_debug.get('high', 0) - nse_debug.get('low', 0):.2f}")
-                if sma_21:
-                    st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
+                if sma_indicators:
+                    st.write(f"**SMA Indicators (Ascending):**")
+                    smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
+                    smas_sorted = sorted(smas)
+                    st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
+                    st.write(f"  • SMA 9: ₹{sma_indicators['sma_9']:,.2f}")
+                    st.write(f"  • SMA 21: ₹{sma_indicators['sma_21']:,.2f}")
+                    st.write(f"  • SMA 200: ₹{sma_indicators['sma_200']:,.2f}")
             else:
                 # Check if using yesterday's data
                 source = nse_debug.get("source", "")
@@ -3094,14 +3116,20 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write(f"**Calculated 26.11% Levels:**")
                     st.write(f"  • Upper: {levels_26_11['upper']}")
                     st.write(f"  • Lower: {levels_26_11['lower']}")
-                    if sma_21:
-                        st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
+                    if sma_indicators:
+                        st.write(f"**SMA Indicators (Ascending):**")
+                        smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
+                        smas_sorted = sorted(smas)
+                        st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
                 else:
                     st.warning("⏳ Waiting for WebSocket data from Upstox...")
                     st.write(f"**Calculated levels anyway:** Upper={levels_26_11['upper']}, Lower={levels_26_11['lower']}")
                     st.write(f"**High used:** {levels_26_11['high']}, **Low used:** {levels_26_11['low']}")
-                    if sma_21:
-                        st.write(f"**SMA 21:** ₹{sma_21:,.2f}")
+                    if sma_indicators:
+                        st.write(f"**SMA Indicators (Ascending):**")
+                        smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
+                        smas_sorted = sorted(smas)
+                        st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
 
                 # Show WebSocket status
                 st.markdown("### 📡 WebSocket Diagnostic")
@@ -3137,8 +3165,15 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                     st.write("WebSocket is connecting to Upstox and subscribing to live feed.")
                     st.write("This can take 5-10 seconds on first load.")
 
-    # Format SMA 21 display
-    sma_21_display = f"SMA 21: ₹{sma_21:,.2f}" if sma_21 else "SMA 21: Calculating..."
+    # Format SMA display - show all three in ascending order
+    if sma_indicators:
+        smas = [sma_indicators['sma_9'], sma_indicators['sma_21'], sma_indicators['sma_200']]
+        smas_sorted = sorted(smas)
+        sma_display = f"SMAs: ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
+        sma_detail = f"<small>(9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f})</small>"
+    else:
+        sma_display = "SMAs: Calculating..."
+        sma_detail = ""
 
     st.markdown(
         f"<div class='inst-card'>"
@@ -3153,7 +3188,8 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         f"      <br/>"
         f"      (26.11% Low) · {levels_26_11['lower']} <span style='color:#999;font-size:8px;'>(H:{levels_26_11['high']} L:{levels_26_11['low']})</span>"
         f"      <br/>"
-        f"      <span style='color:#4caf50;'>{sma_21_display}</span>"
+        f"      <span style='color:#4caf50;'>{sma_display}</span>"
+        f"      {sma_detail}"
         f"    </div>"
         f"  </div></div>"
         f"{pcr_html(result['pcr'], pcr_oi_chg, atm_ce_oi_chg, atm_pe_oi_chg, spcl_val, result['atm'], result['step'], bullish, ce_map, pe_map, opening_ce_prices, opening_pe_prices, sym, days_to_expiry)}"
