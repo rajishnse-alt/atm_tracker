@@ -1941,6 +1941,55 @@ def _get_session_high_low(symbol):
     data = st.session_state[state_key]
     return data.get("high"), data.get("low")
 
+def _get_sma_from_websocket_candles(symbol):
+    """
+    Calculate SMA 9, 21, 200 from 15-minute candles built from WebSocket ticks.
+    Returns: dict with keys 'sma_9', 'sma_21', 'sma_200' or None if insufficient data
+    """
+    try:
+        import pandas as pd
+
+        candles_key = f"candles_15m_{symbol}"
+        candles = st.session_state.get(candles_key, {})
+
+        if not candles or len(candles) < 200:
+            logging.warning(f"Insufficient 15m candles for {symbol}: {len(candles)} (need 200)")
+            return None
+
+        # Convert candles dict to DataFrame
+        # Sort by time to ensure chronological order
+        sorted_times = sorted(candles.keys())
+        close_prices = [candles[t]["close"] for t in sorted_times]
+
+        # Calculate SMAs using pandas rolling mean
+        close_series = pd.Series(close_prices)
+        sma_9 = close_series.rolling(window=9).mean()
+        sma_21 = close_series.rolling(window=21).mean()
+        sma_200 = close_series.rolling(window=200).mean()
+
+        # Get the latest values
+        latest_sma_9 = sma_9.iloc[-1]
+        latest_sma_21 = sma_21.iloc[-1]
+        latest_sma_200 = sma_200.iloc[-1]
+
+        # Check if all values are valid (not NaN)
+        if pd.notna(latest_sma_9) and pd.notna(latest_sma_21) and pd.notna(latest_sma_200):
+            result = {
+                'sma_9': float(latest_sma_9),
+                'sma_21': float(latest_sma_21),
+                'sma_200': float(latest_sma_200),
+                'candles_count': len(candles)
+            }
+            logging.debug(f"✅ {symbol} SMAs (15m WebSocket) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f} ({len(candles)} candles)")
+            return result
+        else:
+            logging.warning(f"NaN in SMA calculation for {symbol}")
+            return None
+
+    except Exception as e:
+        logging.error(f"SMA calculation from WebSocket candles failed for {symbol}: {e}", exc_info=True)
+        return None
+
 @st.cache_data(ttl=60)  # Cache for 1 minute (intraday data updates frequently)
 def _fetch_sma_indicators(symbol):
     """
@@ -1965,17 +2014,30 @@ def _fetch_sma_indicators(symbol):
 
         ticker_symbol = ticker_map.get(symbol, f"{symbol}.NS")
 
-        # Fetch 15-minute bars for intraday trading
+        # Try to fetch 15-minute bars for intraday trading
         # Need ~3 days for SMA 200 (200 bars * 15min = 3000min = ~50 hours of trading)
         ticker = yf.Ticker(ticker_symbol)
         hist = ticker.history(period="5d", interval="15m")
 
+        # If 15m data not available, try 1-hour bars
+        if hist.empty or len(hist) < 50:
+            logging.info(f"15m data unavailable/insufficient for {symbol}, trying 1h bars...")
+            hist = ticker.history(period="30d", interval="1h")
+            timeframe_used = "1h"
+        else:
+            timeframe_used = "15m"
+
         if hist.empty:
-            logging.warning(f"No 15-minute data for SMAs for {symbol}")
+            logging.error(f"❌ No intraday data for {symbol} - yfinance may not support intraday for NSE")
+            print(f"DEBUG: hist.empty for {ticker_symbol}")
             return None
 
-        if len(hist) < 200:
-            logging.warning(f"Insufficient 15m data for SMA 200 for {symbol}: {len(hist)} bars (need 200)")
+        bars_count = len(hist)
+        logging.info(f"📊 Fetched {bars_count} {timeframe_used} bars for {symbol}")
+
+        if bars_count < 200:
+            logging.warning(f"⚠️ Insufficient {timeframe_used} data for SMA 200 for {symbol}: {bars_count} bars (need 200)")
+            print(f"DEBUG: Only {bars_count} bars for {ticker_symbol}, need 200")
             return None
 
         # Calculate SMAs using pandas rolling mean on Close prices
@@ -1990,20 +2052,29 @@ def _fetch_sma_indicators(symbol):
         latest_sma_200 = sma_200.iloc[-1]
 
         # Check if all values are valid (not NaN)
-        if pd.notna(latest_sma_9) and pd.notna(latest_sma_21) and pd.notna(latest_sma_200):
+        nan_check_9 = pd.notna(latest_sma_9)
+        nan_check_21 = pd.notna(latest_sma_21)
+        nan_check_200 = pd.notna(latest_sma_200)
+
+        logging.debug(f"SMA NaN checks - 9: {nan_check_9}, 21: {nan_check_21}, 200: {nan_check_200}")
+
+        if nan_check_9 and nan_check_21 and nan_check_200:
             result = {
                 'sma_9': float(latest_sma_9),
                 'sma_21': float(latest_sma_21),
                 'sma_200': float(latest_sma_200)
             }
-            logging.debug(f"{symbol} SMAs (15m) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
+            logging.info(f"✅ {symbol} SMAs ({timeframe_used}) - 9: {result['sma_9']:.2f}, 21: {result['sma_21']:.2f}, 200: {result['sma_200']:.2f}")
             return result
         else:
-            logging.warning(f"SMA calculation resulted in NaN for {symbol}")
+            logging.error(f"❌ NaN in SMA calculation for {symbol}: 9={latest_sma_9}, 21={latest_sma_21}, 200={latest_sma_200}")
             return None
 
     except Exception as e:
-        logging.error(f"SMA calculation failed for {symbol}: {e}", exc_info=True)
+        logging.error(f"❌ SMA calculation failed for {symbol}: {e}", exc_info=True)
+        import traceback
+        traceback.print_exc()
+        print(f"DEBUG: Exception in SMA fetch for {symbol}: {e}")
         return None
 
 def _fetch_sma_21(symbol):
@@ -2013,6 +2084,46 @@ def _fetch_sma_21(symbol):
     """
     result = _fetch_sma_indicators(symbol)
     return result.get('sma_21') if result else None
+
+def _get_15min_candle_key(timestamp_ist):
+    """Get 15-minute candle key based on IST timestamp."""
+    # Round down to nearest 15-minute boundary
+    minute = (timestamp_ist.minute // 15) * 15
+    hour = timestamp_ist.hour
+
+    # Handle minute=60 case (e.g., 9:60 -> 10:00)
+    if minute == 60:
+        minute = 0
+        hour += 1
+
+    return f"{hour:02d}:{minute:02d}"
+
+def _update_15min_candles(symbol, ltp, timestamp_ist):
+    """Update 15-minute OHLC candles with new tick."""
+    candles_key = f"candles_15m_{symbol}"
+
+    if candles_key not in st.session_state:
+        st.session_state[candles_key] = {}
+
+    candle_time = _get_15min_candle_key(timestamp_ist)
+    candles = st.session_state[candles_key]
+
+    if candle_time not in candles:
+        # New 15-minute candle
+        candles[candle_time] = {
+            "open": ltp,
+            "high": ltp,
+            "low": ltp,
+            "close": ltp,
+            "volume": 1
+        }
+    else:
+        # Update existing candle
+        candle = candles[candle_time]
+        candle["high"] = max(candle["high"], ltp)
+        candle["low"] = min(candle["low"], ltp)
+        candle["close"] = ltp
+        candle["volume"] += 1
 
 def _update_session_high_low(symbol, ltp):
     """Update session high/low with each new tick."""
@@ -2026,6 +2137,10 @@ def _update_session_high_low(symbol, ltp):
         if ltp < data["low"]:
             data["low"] = ltp
         data["ticks"] = data.get("ticks", 0) + 1
+
+    # Also update 15-minute candles
+    timestamp_ist = datetime.now(IST)
+    _update_15min_candles(symbol, ltp, timestamp_ist)
 
 def _start_upstox_websocket(symbol, access_token):
     """
@@ -3072,8 +3187,16 @@ def render_symbol(access_token, sym, vix_info, now_ist):
     # Calculate 26.11 reversal levels (this fetches API data and stores in session_state)
     levels_26_11 = _calculate_26_11_levels(result['spot'], sym)
 
-    # Fetch SMA indicators (9, 21, 200)
-    sma_indicators = _fetch_sma_indicators(sym)
+    # Fetch SMA indicators (9, 21, 200) from WebSocket 15-minute candles
+    sma_indicators = _get_sma_from_websocket_candles(sym)
+
+    # If insufficient WebSocket data (first day of trading), show status
+    if not sma_indicators:
+        candles_count = len(st.session_state.get(f"candles_15m_{sym}", {}))
+        if candles_count > 0:
+            logging.info(f"Building 15m candles for {sym}: {candles_count}/200 needed for SMA 200")
+        else:
+            logging.info(f"WebSocket not yet providing data for {sym}")
 
     # DEBUG SECTION - Now API data is available in session_state
     debug_key = f"show_debug_{sym}"
@@ -3173,7 +3296,13 @@ def render_symbol(access_token, sym, vix_info, now_ist):
         sma_display = f"SMAs (15m): ₹{smas_sorted[0]:,.2f} → ₹{smas_sorted[1]:,.2f} → ₹{smas_sorted[2]:,.2f}"
         sma_detail = f"<small>(9: {sma_indicators['sma_9']:,.2f} | 21: {sma_indicators['sma_21']:,.2f} | 200: {sma_indicators['sma_200']:,.2f})</small>"
     else:
-        sma_display = "SMAs (15m): Calculating..."
+        # Show progress building 15-minute candles from WebSocket
+        candles_count = len(st.session_state.get(f"candles_15m_{sym}", {}))
+        if candles_count > 0:
+            progress = int((candles_count / 200) * 100)
+            sma_display = f"SMAs (15m): Building... {candles_count}/200 candles ({progress}%)"
+        else:
+            sma_display = "SMAs (15m): Waiting for WebSocket data..."
         sma_detail = ""
 
     st.markdown(
