@@ -3513,17 +3513,30 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                 st.write(f"**File:** `data/ticks/{sym}.csv`")
                 st.info("📝 Waiting for first tick data (collection starts at 9:15 AM)")
 
-            # Show WebSocket tick status
-            st.write("### 📡 WebSocket Tick Status")
+            # Show WebSocket tick status and diagnostics
+            st.write("### 📡 WebSocket Connection & Tick Status")
+
+            ws_started = st.session_state.get(f"ws_started_{sym}", False)
             all_ticks = st.session_state.get(f"ws_tick_count_{sym}", 0)
             price_ticks = st.session_state.get(f"ws_price_tick_count_{sym}", 0)
+
+            # WebSocket connection status
+            if ws_started:
+                st.write("**Connection Status:** ✅ WebSocket Started")
+            else:
+                st.write("**Connection Status:** ⏳ Not started (market closed or token invalid)")
+
             st.write(f"**Total messages received:** {all_ticks}")
             st.write(f"**Price ticks processed:** {price_ticks}")
 
             if price_ticks > 0:
-                st.success(f"✅ WebSocket is receiving data! {price_ticks} price updates")
+                st.success(f"✅ WebSocket ACTIVE! {price_ticks} price updates")
+            elif ws_started and all_ticks > 0:
+                st.info(f"📡 WebSocket connected but no price ticks yet ({all_ticks} messages, but no LTP)")
+            elif ws_started and all_ticks == 0:
+                st.warning(f"⏳ WebSocket started but no data arriving (check token & market hours)")
             else:
-                st.warning("⏳ Waiting for WebSocket ticks to arrive (market may be closed)")
+                st.warning("⏳ WebSocket not started (market may be closed, or starts at 9:15 AM IST)")
 
             st.write("### 📊 15-Minute Candles Status")
             st.write(f"**Total 15m candles collected:** {candles_count}/200")
@@ -3598,39 +3611,53 @@ def render_symbol(access_token, sym, vix_info, now_ist):
                         smas_sorted = sorted(smas)
                         st.write(f"  • {smas_sorted[0]:,.2f} → {smas_sorted[1]:,.2f} → {smas_sorted[2]:,.2f}")
 
-                # Show WebSocket status
-                st.markdown("### 📡 WebSocket Diagnostic")
+                # Show WebSocket detailed diagnostic
+                st.markdown("### 📡 WebSocket Detailed Diagnostic")
 
                 ws_state_key = f"session_high_low_{sym}"
                 ws_started_key = f"ws_started_{sym}"
                 ws_data = st.session_state.get(ws_state_key)
                 ws_started = st.session_state.get(ws_started_key, False)
 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
 
                 with col1:
                     if ws_started:
-                        st.write("✅ **WebSocket Initialized**")
+                        st.write("✅ **WebSocket Started**")
                     else:
-                        st.write("🔄 **WebSocket Initializing...**")
+                        st.write("❌ **Not Started**")
 
                 with col2:
                     st.write(f"**Instrument Key:**")
-                    st.code(INSTRUMENT_KEY.get(sym, "NOT FOUND"))
+                    st.code(INSTRUMENT_KEY.get(sym, "NOT FOUND"), language="text")
+
+                with col3:
+                    st.write(f"**Access Token:**")
+                    if access_token:
+                        token_preview = access_token[:20] + "..." if len(access_token) > 20 else access_token
+                        st.write(f"✅ Present ({len(access_token)} chars)")
+                    else:
+                        st.write("❌ Missing")
 
                 if ws_data:
-                    st.success(f"✅ **Receiving Ticks**")
+                    st.success(f"✅ **Receiving Ticks - Session Started**")
                     col_high, col_low, col_ticks = st.columns(3)
                     with col_high:
-                        st.metric("Session High", ws_data.get('high', 'N/A'))
+                        st.metric("Session High", f"₹{ws_data.get('high', 'N/A')}")
                     with col_low:
-                        st.metric("Session Low", ws_data.get('low', 'N/A'))
+                        st.metric("Session Low", f"₹{ws_data.get('low', 'N/A')}")
                     with col_ticks:
-                        st.metric("Ticks Count", ws_data.get('ticks', 0))
+                        st.metric("Ticks Received", ws_data.get('ticks', 0))
                 else:
-                    st.info(f"⏳ **Waiting for first tick...**")
-                    st.write("WebSocket is connecting to Upstox and subscribing to live feed.")
-                    st.write("This can take 5-10 seconds on first load.")
+                    if ws_started:
+                        st.warning(f"⏳ **Connected but no ticks yet**")
+                        st.write("• WebSocket is connected and subscribed")
+                        st.write("• Waiting for first price tick...")
+                        st.write("• This is normal at start of session")
+                    else:
+                        st.info(f"⏳ **WebSocket not yet started**")
+                        st.write("• WebSocket starts automatically at 9:15 AM IST")
+                        st.write("• If market is open and no ticks, check token validity")
 
     # Format SMA display - show all three in ascending order
     if sma_indicators:
