@@ -19,10 +19,15 @@ from pathlib import Path
 logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
 
 # ─────────────────────────────────────────────
-# TICK DATA LOGGING SETUP
+# TICK DATA LOGGING SETUP & THREAD-SAFE COUNTERS
 # ─────────────────────────────────────────────
 DATA_DIR = Path(__file__).parent / "data" / "ticks"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Thread-safe tick counters (for WebSocket daemon thread)
+import threading
+TICK_COUNTERS_LOCK = threading.Lock()
+TICK_COUNTERS = {}  # {symbol: {'all_ticks': 0, 'price_ticks': 0}}
 
 def _get_tick_data_file(symbol):
     """Get the file path for tick data (single file per symbol)."""
@@ -2422,9 +2427,11 @@ def _start_upstox_websocket(symbol, access_token):
         try:
             data = json.loads(message)
 
-            # Track all messages (for debugging)
-            tick_count_key = f"ws_tick_count_{symbol}"
-            st.session_state[tick_count_key] = st.session_state.get(tick_count_key, 0) + 1
+            # Track all messages (thread-safe)
+            with TICK_COUNTERS_LOCK:
+                if symbol not in TICK_COUNTERS:
+                    TICK_COUNTERS[symbol] = {'all_ticks': 0, 'price_ticks': 0}
+                TICK_COUNTERS[symbol]['all_ticks'] += 1
 
             # Upstox sends tick data with 'ltp' field
             if isinstance(data, dict):
@@ -2434,14 +2441,15 @@ def _start_upstox_websocket(symbol, access_token):
                     try:
                         ltp = float(ltp)
 
-                        # Log price ticks (not all messages)
-                        price_tick_key = f"ws_price_tick_count_{symbol}"
-                        st.session_state[price_tick_key] = st.session_state.get(price_tick_key, 0) + 1
+                        # Count price ticks (thread-safe)
+                        with TICK_COUNTERS_LOCK:
+                            TICK_COUNTERS[symbol]['price_ticks'] += 1
+                            price_tick_num = TICK_COUNTERS[symbol]['price_ticks']
 
                         # Pass full tick data for complete logging
                         _update_session_high_low(symbol, ltp, data)
 
-                        logging.info(f"✅ [{symbol}] Tick #{st.session_state[price_tick_key]}: {ltp} | Vol: {data.get('volume', 'N/A')} | OI: {data.get('oi', 'N/A')}")
+                        logging.info(f"✅ [{symbol}] Tick #{price_tick_num}: {ltp} | Vol: {data.get('volume', 'N/A')} | OI: {data.get('oi', 'N/A')}")
                     except (ValueError, TypeError) as e:
                         logging.warning(f"❌ LTP parse error for {symbol}: {e}")
                 else:
@@ -3517,8 +3525,12 @@ def render_symbol(access_token, sym, vix_info, now_ist):
             st.write("### 📡 WebSocket Connection & Tick Status")
 
             ws_started = st.session_state.get(f"ws_started_{sym}", False)
-            all_ticks = st.session_state.get(f"ws_tick_count_{sym}", 0)
-            price_ticks = st.session_state.get(f"ws_price_tick_count_{sym}", 0)
+
+            # Get thread-safe tick counters
+            with TICK_COUNTERS_LOCK:
+                counters = TICK_COUNTERS.get(sym, {'all_ticks': 0, 'price_ticks': 0})
+                all_ticks = counters['all_ticks']
+                price_ticks = counters['price_ticks']
 
             # WebSocket connection status
             if ws_started:
