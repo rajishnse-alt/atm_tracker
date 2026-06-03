@@ -68,30 +68,47 @@ def _purge_old_tick_data(symbol, days=30):
     except Exception as e:
         logging.error(f"Error purging old tick data for {symbol}: {e}")
 
-def _log_tick(symbol, ltp, timestamp_ist):
-    """Log individual tick to CSV file."""
+def _log_tick(symbol, tick_data, timestamp_ist):
+    """Log individual tick from Upstox WebSocket with full OHLCV data."""
     try:
         file_path = _get_tick_data_file(symbol)
         file_exists = file_path.exists()
 
+        # Extract data from Upstox tick message
+        ltp = tick_data.get('ltp') or tick_data.get('lastPrice') or tick_data.get('last_price', 0)
+        volume = tick_data.get('volume') or tick_data.get('vol', 0)
+        oi = tick_data.get('oi') or tick_data.get('openInterest', 0)
+        bid = tick_data.get('bid') or tick_data.get('bidPrice', ltp)
+        ask = tick_data.get('ask') or tick_data.get('askPrice', ltp)
+        bid_qty = tick_data.get('bidQty') or tick_data.get('bidQuantity', 0)
+        ask_qty = tick_data.get('askQty') or tick_data.get('askQuantity', 0)
+
         with open(file_path, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'type'])
+            writer = csv.DictWriter(f, fieldnames=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi',
+                'bid', 'ask', 'bid_qty', 'ask_qty', 'type'
+            ])
 
             if not file_exists:
                 writer.writeheader()
 
             writer.writerow({
                 'timestamp': timestamp_ist.isoformat(),
-                'open': f"{ltp:.2f}",
-                'high': f"{ltp:.2f}",
-                'low': f"{ltp:.2f}",
-                'close': f"{ltp:.2f}",
-                'volume': 1,
+                'open': f"{float(ltp):.2f}",
+                'high': f"{float(ltp):.2f}",
+                'low': f"{float(ltp):.2f}",
+                'close': f"{float(ltp):.2f}",
+                'volume': int(volume) if volume else 1,
+                'oi': int(oi) if oi else 0,
+                'bid': f"{float(bid):.2f}" if bid else "",
+                'ask': f"{float(ask):.2f}" if ask else "",
+                'bid_qty': int(bid_qty) if bid_qty else 0,
+                'ask_qty': int(ask_qty) if ask_qty else 0,
                 'type': 'tick'
             })
 
     except Exception as e:
-        logging.error(f"Error logging tick for {symbol}: {e}")
+        logging.error(f"Error logging tick for {symbol}: {e}", exc_info=True)
 
 def _log_3min_candle(symbol, candle):
     """Write a 3-minute candle to the tick data file."""
@@ -2357,7 +2374,7 @@ def _update_15min_candles(symbol, ltp, timestamp_ist):
         candle["close"] = ltp
         candle["volume"] += 1
 
-def _update_session_high_low(symbol, ltp):
+def _update_session_high_low(symbol, ltp, tick_data=None):
     """Update session high/low with each new tick."""
     state_key = f"session_high_low_{symbol}"
     if state_key not in st.session_state:
@@ -2372,7 +2389,13 @@ def _update_session_high_low(symbol, ltp):
 
     # Log individual tick and update candles
     timestamp_ist = datetime.now(IST)
-    _log_tick(symbol, ltp, timestamp_ist)  # Log individual tick with OHLC
+
+    # If tick_data provided (from WebSocket), log full data; otherwise just use LTP
+    if tick_data:
+        _log_tick(symbol, tick_data, timestamp_ist)  # Log full Upstox tick data
+    else:
+        _log_tick(symbol, {'ltp': ltp}, timestamp_ist)  # Log just LTP
+
     _update_3min_candles(symbol, ltp, timestamp_ist)  # Build 3m candles
     _update_15min_candles(symbol, ltp, timestamp_ist)  # Build 15m candles
 
@@ -2410,13 +2433,15 @@ def _start_upstox_websocket(symbol, access_token):
                 if ltp is not None:
                     try:
                         ltp = float(ltp)
-                        _update_session_high_low(symbol, ltp)
 
                         # Log price ticks (not all messages)
                         price_tick_key = f"ws_price_tick_count_{symbol}"
                         st.session_state[price_tick_key] = st.session_state.get(price_tick_key, 0) + 1
 
-                        logging.info(f"✅ [{symbol}] Tick #{st.session_state[price_tick_key]}: {ltp} | H: {st.session_state.get(f'session_high_low_{symbol}', {}).get('high')} | L: {st.session_state.get(f'session_high_low_{symbol}', {}).get('low')}")
+                        # Pass full tick data for complete logging
+                        _update_session_high_low(symbol, ltp, data)
+
+                        logging.info(f"✅ [{symbol}] Tick #{st.session_state[price_tick_key]}: {ltp} | Vol: {data.get('volume', 'N/A')} | OI: {data.get('oi', 'N/A')}")
                     except (ValueError, TypeError) as e:
                         logging.warning(f"❌ LTP parse error for {symbol}: {e}")
                 else:
