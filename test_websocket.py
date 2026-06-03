@@ -34,34 +34,56 @@ def upstox_headers(token):
 # WEBSOCKET CALLBACKS
 # ─────────────────────────────────────
 def on_message(ws, message):
-    """Handle incoming WebSocket message."""
+    """Handle incoming WebSocket message (Upstox V3 API format)."""
     try:
         data = json.loads(message)
+        symbol = ws.symbol if hasattr(ws, 'symbol') else "UNKNOWN"
+        instrument_key = ws.instrument_key if hasattr(ws, 'instrument_key') else "UNKNOWN"
+        msg_type = data.get('type')
 
-        # Extract LTP from message
-        ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
+        # Handle market_info messages (first message on subscription)
+        if msg_type == 'market_info':
+            print(f"📡 [{symbol}] Received market_info status")
+            return
 
-        if ltp:
-            ltp = float(ltp)
-            symbol = ws.symbol if hasattr(ws, 'symbol') else "UNKNOWN"
+        # Handle live_feed messages (actual tick data)
+        if msg_type == 'live_feed':
+            feeds = data.get('feeds', {})
+            tick_data = feeds.get(instrument_key)
 
-            # Update session high/low
-            if symbol not in session_data:
-                session_data[symbol] = {"high": ltp, "low": ltp, "ticks": 0}
+            if tick_data is None:
+                print(f"⚠️  [{symbol}] live_feed received but no data for {instrument_key}")
+                return
 
-            if ltp > session_data[symbol]["high"]:
-                session_data[symbol]["high"] = ltp
-            if ltp < session_data[symbol]["low"]:
-                session_data[symbol]["low"] = ltp
+            # Extract LTP from the nested tick data
+            ltp = tick_data.get('ltp') or tick_data.get('lastPrice') or tick_data.get('last_price')
 
-            session_data[symbol]["ticks"] += 1
+            if ltp:
+                ltp = float(ltp)
 
-            print(f"✅ [{symbol}] LTP: {ltp:>10.2f} | H: {session_data[symbol]['high']:>10.2f} | L: {session_data[symbol]['low']:>10.2f} | Ticks: {session_data[symbol]['ticks']}")
+                # Update session high/low
+                if symbol not in session_data:
+                    session_data[symbol] = {"high": ltp, "low": ltp, "ticks": 0}
+
+                if ltp > session_data[symbol]["high"]:
+                    session_data[symbol]["high"] = ltp
+                if ltp < session_data[symbol]["low"]:
+                    session_data[symbol]["low"] = ltp
+
+                session_data[symbol]["ticks"] += 1
+
+                print(f"✅ [{symbol}] LTP: {ltp:>10.2f} | H: {session_data[symbol]['high']:>10.2f} | L: {session_data[symbol]['low']:>10.2f} | Ticks: {session_data[symbol]['ticks']}")
+            else:
+                print(f"⚠️  [{symbol}] live_feed with no LTP data")
+        else:
+            print(f"⚠️  [{symbol}] Unknown message type: {msg_type}")
 
     except json.JSONDecodeError as e:
         print(f"⚠️  JSON Error: {e}")
     except Exception as e:
         print(f"❌ Message Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 def on_error(ws, error):
     """Handle WebSocket error."""

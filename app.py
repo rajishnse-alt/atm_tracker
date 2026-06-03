@@ -2423,7 +2423,7 @@ def _start_upstox_websocket(symbol, access_token):
     ws_connection = {"active": False}
 
     def on_message(ws, message):
-        """Process incoming tick data from Upstox WebSocket."""
+        """Process incoming tick data from Upstox WebSocket (V3 API format)."""
         try:
             data = json.loads(message)
 
@@ -2433,32 +2433,53 @@ def _start_upstox_websocket(symbol, access_token):
                     TICK_COUNTERS[symbol] = {'all_ticks': 0, 'price_ticks': 0}
                 TICK_COUNTERS[symbol]['all_ticks'] += 1
 
-            # Upstox sends tick data with 'ltp' field
+            # Upstox V3 API sends messages with type field
             if isinstance(data, dict):
-                ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
+                msg_type = data.get('type')
 
-                if ltp is not None:
-                    try:
-                        ltp = float(ltp)
+                # Handle market_info messages (first message on subscription)
+                if msg_type == 'market_info':
+                    logging.debug(f"[{symbol}] market_info received: {data.get('segment', 'N/A')}")
+                    return
 
-                        # Count price ticks (thread-safe)
-                        with TICK_COUNTERS_LOCK:
-                            TICK_COUNTERS[symbol]['price_ticks'] += 1
-                            price_tick_num = TICK_COUNTERS[symbol]['price_ticks']
+                # Handle live_feed messages (actual tick data)
+                if msg_type == 'live_feed':
+                    feeds = data.get('feeds', {})
 
-                        # Pass full tick data for complete logging
-                        _update_session_high_low(symbol, ltp, data)
+                    # Tick data is nested under instrument key in feeds object
+                    tick_data = feeds.get(instrument_key)
+                    if tick_data is None:
+                        logging.debug(f"[{symbol}] live_feed but no data for {instrument_key}")
+                        return
 
-                        logging.info(f"✅ [{symbol}] Tick #{price_tick_num}: {ltp} | Vol: {data.get('volume', 'N/A')} | OI: {data.get('oi', 'N/A')}")
-                    except (ValueError, TypeError) as e:
-                        logging.warning(f"❌ LTP parse error for {symbol}: {e}")
+                    # Extract LTP from the nested tick data
+                    ltp = tick_data.get('ltp') or tick_data.get('lastPrice') or tick_data.get('last_price')
+
+                    if ltp is not None:
+                        try:
+                            ltp = float(ltp)
+
+                            # Count price ticks (thread-safe)
+                            with TICK_COUNTERS_LOCK:
+                                TICK_COUNTERS[symbol]['price_ticks'] += 1
+                                price_tick_num = TICK_COUNTERS[symbol]['price_ticks']
+
+                            # Pass full tick data for complete logging
+                            _update_session_high_low(symbol, ltp, tick_data)
+
+                            logging.info(f"✅ [{symbol}] Tick #{price_tick_num}: {ltp} | Vol: {tick_data.get('volume', 'N/A')} | OI: {tick_data.get('oi', 'N/A')}")
+                        except (ValueError, TypeError) as e:
+                            logging.warning(f"❌ LTP parse error for {symbol}: {e}")
+                    else:
+                        logging.debug(f"[{symbol}] live_feed with no LTP: {list(tick_data.keys())}")
                 else:
-                    logging.debug(f"[{symbol}] Non-price message: {list(data.keys())}")
+                    # Unknown message type - just log it
+                    logging.debug(f"[{symbol}] Unknown message type '{msg_type}': {list(data.keys())}")
 
         except json.JSONDecodeError as e:
             logging.warning(f"❌ JSON decode error for {symbol}: {e}")
         except Exception as e:
-            logging.error(f"❌ WebSocket message error for {symbol}: {e}")
+            logging.error(f"❌ WebSocket message error for {symbol}: {e}", exc_info=True)
 
     def on_error(ws, error):
         logging.error(f"WebSocket error for {symbol}: {error}")
@@ -2548,14 +2569,28 @@ def _test_websocket_connection(symbol, access_token):
     def on_message(ws, message):
         try:
             data = json.loads(message)
-            ltp = data.get('ltp') or data.get('lastPrice') or data.get('last_price')
-            if ltp:
-                ltp = float(ltp)
-                if test_data["high"] is None or ltp > test_data["high"]:
-                    test_data["high"] = ltp
-                if test_data["low"] is None or ltp < test_data["low"]:
-                    test_data["low"] = ltp
-                test_data["ticks"] += 1
+            msg_type = data.get('type')
+
+            # Handle market_info messages (ignore)
+            if msg_type == 'market_info':
+                return
+
+            # Handle live_feed messages (actual tick data)
+            if msg_type == 'live_feed':
+                feeds = data.get('feeds', {})
+                tick_data = feeds.get(instrument_key)
+
+                if tick_data is None:
+                    return
+
+                ltp = tick_data.get('ltp') or tick_data.get('lastPrice') or tick_data.get('last_price')
+                if ltp:
+                    ltp = float(ltp)
+                    if test_data["high"] is None or ltp > test_data["high"]:
+                        test_data["high"] = ltp
+                    if test_data["low"] is None or ltp < test_data["low"]:
+                        test_data["low"] = ltp
+                    test_data["ticks"] += 1
         except Exception as e:
             test_data["error"] = str(e)
 
