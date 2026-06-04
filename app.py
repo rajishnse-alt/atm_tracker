@@ -16,7 +16,41 @@ import logging
 import os
 import csv
 from pathlib import Path
-logging.basicConfig(level=logging.WARNING)  # Suppress debug logs
+
+# Custom logging handler to capture logs in session state
+class StreamlitLogHandler(logging.Handler):
+    """Custom handler that stores log messages in a queue for display in Streamlit."""
+    def __init__(self, max_lines=100):
+        super().__init__()
+        self.max_lines = max_lines
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # Try to store in session state if available
+            try:
+                if 'app_logs' not in st.session_state:
+                    st.session_state['app_logs'] = []
+                st.session_state['app_logs'].append(msg)
+                # Keep only recent logs
+                if len(st.session_state['app_logs']) > self.max_lines:
+                    st.session_state['app_logs'] = st.session_state['app_logs'][-self.max_lines:]
+            except:
+                pass  # st not available in daemon threads
+        except Exception:
+            self.handleError(record)
+
+# Setup logging with custom handler
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+
+# Add custom handler for Streamlit display
+streamlit_handler = StreamlitLogHandler(max_lines=200)
+streamlit_handler.setLevel(logging.INFO)
+logging.getLogger().addHandler(streamlit_handler)
 
 # ─────────────────────────────────────────────
 # TICK DATA LOGGING SETUP & THREAD-SAFE COUNTERS
@@ -2425,13 +2459,18 @@ def _start_upstox_websocket(symbol, access_token):
     def on_message(ws, message):
         """Process incoming tick data from Upstox WebSocket (V3 API format)."""
         try:
+            # 🔍 DEBUG: Log every message received
+            logging.info(f"📨 [{symbol}] RECEIVED MESSAGE (length: {len(message)})")
+
             data = json.loads(message)
+            logging.info(f"📊 [{symbol}] Parsed JSON - Type: {data.get('type')}, Keys: {list(data.keys())}")
 
             # Track all messages (thread-safe)
             with TICK_COUNTERS_LOCK:
                 if symbol not in TICK_COUNTERS:
                     TICK_COUNTERS[symbol] = {'all_ticks': 0, 'price_ticks': 0}
                 TICK_COUNTERS[symbol]['all_ticks'] += 1
+                logging.info(f"📈 [{symbol}] Message #{TICK_COUNTERS[symbol]['all_ticks']}")
 
             # Upstox V3 API sends messages with type field
             if isinstance(data, dict):
@@ -2439,17 +2478,20 @@ def _start_upstox_websocket(symbol, access_token):
 
                 # Handle market_info messages (first message on subscription)
                 if msg_type == 'market_info':
-                    logging.debug(f"[{symbol}] market_info received: {data.get('segment', 'N/A')}")
+                    logging.info(f"✅ [{symbol}] market_info received: {data.get('segment', 'N/A')}")
                     return
 
                 # Handle live_feed messages (actual tick data)
                 if msg_type == 'live_feed':
                     feeds = data.get('feeds', {})
+                    logging.info(f"📡 [{symbol}] live_feed - Available feeds: {list(feeds.keys())}")
 
                     # Tick data is nested under instrument key in feeds object
                     tick_data = feeds.get(instrument_key)
                     if tick_data is None:
-                        logging.debug(f"[{symbol}] live_feed but no data for {instrument_key}")
+                        logging.warning(f"⚠️  [{symbol}] live_feed but no data for {instrument_key}")
+                        logging.warning(f"    Expected key: {instrument_key}")
+                        logging.warning(f"    Available keys: {list(feeds.keys())}")
                         return
 
                     # Extract LTP from the nested tick data
@@ -2471,27 +2513,30 @@ def _start_upstox_websocket(symbol, access_token):
                         except (ValueError, TypeError) as e:
                             logging.warning(f"❌ LTP parse error for {symbol}: {e}")
                     else:
-                        logging.debug(f"[{symbol}] live_feed with no LTP: {list(tick_data.keys())}")
+                        logging.warning(f"⚠️  [{symbol}] live_feed with no LTP - Data: {tick_data}")
                 else:
-                    # Unknown message type - just log it
-                    logging.debug(f"[{symbol}] Unknown message type '{msg_type}': {list(data.keys())}")
+                    # Unknown message type - log full details
+                    logging.warning(f"⚠️  [{symbol}] Unknown message type '{msg_type}' - Full data: {data}")
 
         except json.JSONDecodeError as e:
-            logging.warning(f"❌ JSON decode error for {symbol}: {e}")
+            logging.error(f"❌ JSON decode error for {symbol}: {e}")
+            logging.error(f"   Raw message: {message[:200]}")
         except Exception as e:
             logging.error(f"❌ WebSocket message error for {symbol}: {e}", exc_info=True)
 
     def on_error(ws, error):
-        logging.error(f"WebSocket error for {symbol}: {error}")
+        logging.error(f"❌ WebSocket ERROR for {symbol}: {error}")
         ws_connection["active"] = False
 
     def on_close(ws, close_status_code, close_msg):
-        logging.info(f"WebSocket closed for {symbol} | Code: {close_status_code} | Msg: {close_msg}")
+        logging.warning(f"⚠️  WebSocket CLOSED for {symbol} | Code: {close_status_code} | Msg: {close_msg}")
         ws_connection["active"] = False
 
     def on_open(ws):
         """Subscribe to instrument after WebSocket connects."""
         try:
+            logging.info(f"🔗 [{symbol}] WebSocket OPEN - Sending subscription...")
+
             # Upstox V3 subscription payload (mode: "full" for all tick data)
             payload = {
                 "guid": f"atm-tracker-{symbol}-{int(time.time())}",
@@ -2501,11 +2546,14 @@ def _start_upstox_websocket(symbol, access_token):
                     "mode": "full"  # Full mode = complete OHLC + LTP
                 }
             }
-            ws.send(json.dumps(payload))
+            payload_json = json.dumps(payload)
+            logging.info(f"📤 [{symbol}] Sending payload: {payload_json}")
+
+            ws.send(payload_json)
             ws_connection["active"] = True
-            logging.info(f"✅ Subscribed to [{instrument_key}] on WebSocket")
+            logging.info(f"✅ [{symbol}] Subscription sent to {instrument_key}")
         except Exception as e:
-            logging.error(f"WebSocket subscription failed for {symbol}: {e}")
+            logging.error(f"❌ WebSocket subscription failed for {symbol}: {e}", exc_info=True)
 
     try:
         # Step 1: Get WebSocket URL from authorize endpoint
@@ -3585,6 +3633,16 @@ def render_symbol(access_token, sym, vix_info, now_ist):
             else:
                 st.warning("⏳ WebSocket not started (market may be closed, or starts at 9:15 AM IST)")
 
+            # Show captured logs
+            st.write("### 📋 Live Debug Logs")
+            logs = st.session_state.get('app_logs', [])
+            if logs:
+                # Show last 20 logs
+                log_text = "\n".join(logs[-20:])
+                st.code(log_text, language="text")
+            else:
+                st.info("No logs captured yet. Logs will appear here as WebSocket processes data.")
+
             st.write("### 📊 15-Minute Candles Status")
             st.write(f"**Total 15m candles collected:** {candles_count}/200")
 
@@ -4132,6 +4190,19 @@ api_key      = st.secrets["upstox"]["api_key"]
 api_secret   = st.secrets["upstox"]["api_secret"]
 redirect_uri = st.secrets["upstox"]["redirect_uri"]
 
+# CHECK FOR BAKED-IN TOKEN FIRST (from secrets)
+if "access_token" not in st.session_state:
+    # Try to get from secrets (baked-in token)
+    try:
+        baked_token = st.secrets["upstox"].get("access_token")
+        if baked_token:
+            st.session_state["access_token"] = baked_token
+            st.session_state["token_acquired"] = time.time()
+            st.info("✅ Using baked-in access token from secrets")
+    except:
+        pass
+
+# If still no token, try OAuth flow
 qp        = st.query_params
 auth_code = qp.get("code")
 
@@ -4147,6 +4218,7 @@ if auth_code and "access_token" not in st.session_state:
         st.error(f"Login failed: {err}")
         st.stop()
 
+# Check token expiry (24 hours)
 if "access_token" in st.session_state:
     if time.time() - st.session_state.get("token_acquired", 0) > 86400:
         del st.session_state["access_token"]
@@ -4159,13 +4231,19 @@ if "access_token" not in st.session_state:
       <p style='font-family:var(--display);font-size:20px;font-weight:700;color:white;margin-bottom:.4rem;'>
         Login with Upstox</p>
       <p style='color:#4a6080;font-size:12px;font-family:var(--mono);margin-bottom:1.5rem;'>
-        One click per trading day</p>
+        One click per trading day (or add token to secrets)</p>
       <a href='{auth_url}'
          style='display:inline-block;background:linear-gradient(135deg,#2979ff,#651fff);
                 color:white;padding:11px 28px;border-radius:8px;text-decoration:none;
                 font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.5px;'>
         CONNECT →</a>
     </div>""", unsafe_allow_html=True)
+    st.markdown("""
+    <p style='color:#4a6080;font-size:11px;margin-top:1.5rem;'>
+    <b>Or add to .streamlit/secrets.toml:</b><br>
+    <code>[upstox]<br>
+    access_token = "your_upstox_access_token_here"</code>
+    </p>""", unsafe_allow_html=True)
     st.stop()
 
 access_token = st.session_state["access_token"]
