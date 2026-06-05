@@ -356,7 +356,7 @@ st.markdown("""
 # ─────────────────────────────────────────────
 IST = pytz.timezone("Asia/Kolkata")
 
-STRIKE_STEP_FIXED = {"NIFTY": 50, "BANKNIFTY": 100}
+STRIKE_STEP_FIXED = {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 10}
 
 # Pine parameter defaults
 TREND_EMA_LEN       = 5     # trendEmaLen
@@ -379,6 +379,7 @@ def infer_strike_step(data):
 INSTRUMENT_KEY = {
     "NIFTY":     "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "SENSEX":    "BSE_INDEX|S&P BSE Sensex",
     "HDFCBANK":  "NSE_EQ|INE040A01034",
     "ICICIBANK": "NSE_EQ|INE090A01021",
     "SBIN":      "NSE_EQ|INE062A01020",
@@ -386,13 +387,13 @@ INSTRUMENT_KEY = {
 }
 
 DISPLAY_NAME = {
-    "NIFTY": "NIFTY", "BANKNIFTY": "BANKNIFTY",
+    "NIFTY": "NIFTY", "BANKNIFTY": "BANKNIFTY", "SENSEX": "SENSEX",
     "HDFCBANK": "HDFC Bank", "ICICIBANK": "ICICI Bank",
     "SBIN": "SBI", "RELIANCE": "Reliance",
 }
 
 SYMBOL_GROUPS = [
-    ("📈 Index Options",    ["NIFTY",    "BANKNIFTY"]),
+    ("📈 Index Options",    ["NIFTY", "BANKNIFTY", "SENSEX"]),
     ("🏦 Bank Stocks",      ["HDFCBANK", "ICICIBANK"]),
     ("🏢 Large Cap Stocks", ["SBIN",     "RELIANCE"]),
 ]
@@ -2709,9 +2710,9 @@ def _test_websocket_connection(symbol, access_token):
 
 def _fetch_indices_high_low():
     """
-    Scrapes Moneycontrol live markets page for NIFTY 50 and NIFTY BANK
+    Scrapes Moneycontrol live markets page for NIFTY 50, NIFTY BANK, and SENSEX
     high/low using robust table parsing with validation.
-    Returns: dict with NIFTY and BANKNIFTY keys
+    Returns: dict with NIFTY, BANKNIFTY, and SENSEX keys
     """
     try:
         url = "https://www.moneycontrol.com/markets/indian-indices/live-markets"
@@ -2766,6 +2767,19 @@ def _fetch_indices_high_low():
                         if high_val > 40000 and low_val > 40000 and high_val > low_val:
                             indices["BANKNIFTY"] = {"high": high_val, "low": low_val}
                             logging.info(f"✓ NIFTY BANK - High: {high_val}, Low: {low_val}")
+                    except ValueError:
+                        pass
+
+                # REGEX: Match SENSEX / S&P BSE SENSEX (flexible spacing/formatting)
+                if re.search(r'\b(?:SENSEX|S&P\s+BSE\s+SENSEX|BSE\s+SENSEX)\b', name_cell, re.IGNORECASE):
+                    try:
+                        high_val = float(high_cell.replace(",", ""))
+                        low_val = float(low_cell.replace(",", ""))
+
+                        # Sanity check: SENSEX should be > 40000 (typical range 50k-80k)
+                        if high_val > 40000 and low_val > 40000 and high_val > low_val:
+                            indices["SENSEX"] = {"high": high_val, "low": low_val}
+                            logging.info(f"✓ SENSEX - High: {high_val}, Low: {low_val}")
                     except ValueError:
                         pass
 
@@ -2845,8 +2859,8 @@ def _fetch_moneycontrol_high_low(symbol):
     - For indices: Parse live markets table
     - For equities: Scrape stock page with regex
     """
-    # Handle indices
-    if symbol in ["NIFTY", "BANKNIFTY"]:
+    # Handle indices (NIFTY, BANKNIFTY, SENSEX)
+    if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"]:
         indices_data = _fetch_indices_high_low()
         if symbol in indices_data:
             data = indices_data[symbol]
@@ -3943,7 +3957,7 @@ def show_replay_page(access_token, vix_info, now):
     with col1:
         symbol = st.selectbox(
             "Symbol",
-            options=["NIFTY", "BANKNIFTY", "HDFCBANK", "ICICIBANK", "SBIN", "RELIANCE"],
+            options=["NIFTY", "BANKNIFTY", "SENSEX", "HDFCBANK", "ICICIBANK", "SBIN", "RELIANCE"],
             key="replay_symbol"
         )
 
